@@ -2,9 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Test, console} from "forge-std/Test.sol";
-import {IDclexSwapCallback} from "../src/IDclexSwapCallback.sol";
-import {InvalidDID, InvalidSmartcontract} from "dclex-blockchain/contracts/libs/Model.sol";
-import {IFactory} from "dclex-blockchain/contracts/interfaces/IFactory.sol";
+import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
 import {DclexPool} from "../src/DclexPool.sol";
 import {Stock} from "dclex-blockchain/contracts/dclex/Stock.sol";
 import {USDCMock} from "../test/USDCMock.sol";
@@ -15,38 +13,12 @@ import {SmartcontractIdentity} from "dclex-blockchain/contracts/dclex/Smartcontr
 import {SignatureUtils} from "dclex-blockchain/contracts/dclex/SignatureUtils.sol";
 import {DeployDclex} from "script/DeployDclex.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {MockPyth} from "@pythnetwork/pyth-sdk-solidity/MockPyth.sol";
 import {DclexPythMock} from "./PythMock.sol";
 import {TestBalance} from "./TestBalance.sol";
+import {DclexRouterMock} from "../test/DclexRouterMock.sol";
+import {DeployDclexPool} from "script/DeployDclexPool.s.sol";
+import {HelperConfig} from "script/HelperConfig.s.sol";
 
-contract DclexRouterMock is IDclexSwapCallback {
-    struct CallbackData {
-        address recordBalanceToken;
-    }
-
-    uint256 private amountToBePaid;
-    bool private amountToBePaidSet;
-    bool public dclexSwapCallbackCalled;
-    uint256 public recordedBalance;
-
-    function dclexSwapCallback(address token, uint256 amount, bytes calldata callbackData) external {
-        if (callbackData.length > 4) {
-            CallbackData memory decodedData = abi.decode(callbackData, (CallbackData));
-            recordedBalance = IERC20(decodedData.recordBalanceToken).balanceOf(address(this));
-        }
-        dclexSwapCallbackCalled = true;
-        IERC20(token).transfer(msg.sender, amountToBePaidSet ? amountToBePaid: amount);
-    }
-
-    function setAmountToBePaid(uint256 _amountToBePaid) external {
-        amountToBePaidSet = true;
-        amountToBePaid = _amountToBePaid;
-    }
-
-    function reset() external{
-        dclexSwapCallbackCalled = false;
-    }
-}
 
 contract DclexPoolTest is Test, TestBalance {
     event Paused(address account);
@@ -58,11 +30,11 @@ contract DclexPoolTest is Test, TestBalance {
     event ProtocolFeeRateChanged(uint256 feeRate);
     event ProtocolFeeWithdrawn(uint256 stocksWithdrawn, uint256 usdcWithdrawn, address recipient);
 
-    bytes32 constant internal AAPL_PRICE_FEED_ID = bytes32(uint256(0x1));
-    bytes32 constant internal NVDA_PRICE_FEED_ID = bytes32(uint256(0x2));
-    bytes32 constant internal USDC_PRICE_FEED_ID = bytes32(uint256(0x3));
+    bytes32 internal AAPL_PRICE_FEED_ID;
+    bytes32 internal NVDA_PRICE_FEED_ID;
+    bytes32 internal USDC_PRICE_FEED_ID;
     bytes[] internal PYTH_DATA = new bytes[](0);
-    address internal POOL_ADMIN = makeAddr("pool_admin");
+    address internal POOL_ADMIN;
     address internal ADMIN = makeAddr("admin");
     address internal MASTER_ADMIN = makeAddr("master_admin");
     address internal USER_1 = makeAddr("user_1");
@@ -81,6 +53,7 @@ contract DclexPoolTest is Test, TestBalance {
     DclexPythMock pythMock;
     DclexRouterMock routerMock1;
     DclexRouterMock routerMock2;
+    HelperConfig public helperConfig;
 
     receive() external payable {}
 
@@ -91,8 +64,11 @@ contract DclexPoolTest is Test, TestBalance {
         stocksFactory = contracts.stocksFactory;
         contractIdentity = contracts.contractIdentity;
 
-        usdcMock = new USDCMock("USDC", "USD Coin");
-        pythMock = new DclexPythMock();
+        helperConfig = new HelperConfig();
+        HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
+        POOL_ADMIN = config.admin;
+        usdcMock = USDCMock(address(config.usdcToken));
+        pythMock = new DclexPythMock(address(config.pyth));
         vm.deal(address(pythMock), 1 ether);
         vm.startPrank(ADMIN);
         stocksFactory.createStocks("Apple", "AAPL");
@@ -100,12 +76,16 @@ contract DclexPoolTest is Test, TestBalance {
         vm.stopPrank();
         aaplStock = Stock(stocksFactory.stocks("AAPL"));
         nvdaStock = Stock(stocksFactory.stocks("NVDA"));
-        aaplPool = new DclexPool(IFactory(address(stocksFactory)), pythMock.getPyth(), aaplStock, usdcMock, AAPL_PRICE_FEED_ID, USDC_PRICE_FEED_ID, POOL_ADMIN);
-        nvdaPool = new DclexPool(IFactory(address(stocksFactory)), pythMock.getPyth(), nvdaStock, usdcMock, NVDA_PRICE_FEED_ID, USDC_PRICE_FEED_ID, POOL_ADMIN);
+        DeployDclexPool poolDeployer = new DeployDclexPool();
+        aaplPool = poolDeployer.run(aaplStock, helperConfig);
+        nvdaPool = poolDeployer.run(nvdaStock, helperConfig);
         vm.prank(ADMIN);
         contractIdentity.mintAdmin(address(aaplPool));
         vm.prank(ADMIN);
         contractIdentity.mintAdmin(address(nvdaPool));
+        AAPL_PRICE_FEED_ID = helperConfig.getPriceFeedId("AAPL");
+        NVDA_PRICE_FEED_ID = helperConfig.getPriceFeedId("NVDA");
+        USDC_PRICE_FEED_ID = helperConfig.getPriceFeedId("USDC");
         updatePrice(USDC_PRICE_FEED_ID, 1 ether);
         updatePrice(AAPL_PRICE_FEED_ID, 1 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 1 ether);
@@ -1238,11 +1218,11 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.initialize(1000 ether, 1000e6, PYTH_DATA);
         address nonVerifiedContract = address(new USDCMock("", ""));
 
-        vm.expectRevert(InvalidSmartcontract.selector);
+        vm.expectRevert(InvalidDID.selector);
         aaplPool.transfer(nonVerifiedContract, 1);
 
         aaplPool.approve(address(this), 1);
-        vm.expectRevert(InvalidSmartcontract.selector);
+        vm.expectRevert(InvalidDID.selector);
         aaplPool.transferFrom(address(this), nonVerifiedContract, 1);
     }
 
@@ -1259,11 +1239,11 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(ADMIN);
         contractIdentity.setValids(ids, valids);
 
-        vm.expectRevert(InvalidSmartcontract.selector);
+        vm.expectRevert(InvalidDID.selector);
         aaplPool.transfer(blockedAddress, 1);
 
         aaplPool.approve(address(this), 1);
-        vm.expectRevert(InvalidSmartcontract.selector);
+        vm.expectRevert(InvalidDID.selector);
         aaplPool.transferFrom(address(this), blockedAddress, 1);
     }
 

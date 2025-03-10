@@ -3,8 +3,7 @@ pragma solidity ^0.8.26;
 
 import {IDclexSwapCallback} from "./IDclexSwapCallback.sol";
 import {IDID} from "dclex-blockchain/contracts/interfaces/IDID.sol";
-import {IFactory} from "dclex-blockchain/contracts/interfaces/IFactory.sol";
-import {InvalidDID, InvalidSmartcontract} from "dclex-blockchain/contracts/libs/Model.sol";
+import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -31,7 +30,6 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     uint256 private constant MAX_PROTOCOL_FEE_RATE = 0.15 ether;
     uint8 private constant DECIMALS = 18;
     uint8 private constant USDC_DECIMALS = 6;
-    IFactory private immutable stocksFactory;
     IPyth private immutable pyth;
     IStock public immutable stockToken;
     IERC20 public immutable usdcToken;
@@ -71,10 +69,9 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     );
 
     constructor(
-        IFactory _stocksFactory,
-        IPyth _pyth,
         IStock _stockToken,
         IERC20 _usdcToken,
+        IPyth _pyth,
         bytes32 _stockPriceFeedId,
         bytes32 _usdcPriceFeedId,
         address admin
@@ -84,7 +81,6 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
             string.concat(_stockToken.symbol(), "-LP")
         )
     {
-        stocksFactory = _stocksFactory;
         pyth = _pyth;
         stockToken = _stockToken;
         usdcToken = _usdcToken;
@@ -467,11 +463,8 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         address to,
         uint256 amount
     ) public override whenNotPaused nonReentrant returns (bool) {
-        if (!stocksFactory.getDID().verifyTransfer(msg.sender, to, amount)) {
+        if (!stockToken.DID().verifyTransfer(msg.sender, to, amount)) {
             revert InvalidDID();
-        }
-        if (!stocksFactory.getSCID().verifyTransfer(msg.sender, to, amount)) {
-            revert InvalidSmartcontract();
         }
         return super.transfer(to, amount);
     }
@@ -481,11 +474,8 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         address to,
         uint256 amount
     ) public override whenNotPaused nonReentrant returns (bool) {
-        if (!stocksFactory.getDID().verifyTransfer(from, to, amount)) {
+        if (!stockToken.DID().verifyTransfer(from, to, amount)) {
             revert InvalidDID();
-        }
-        if (!stocksFactory.getSCID().verifyTransfer(msg.sender, to, amount)) {
-            revert InvalidSmartcontract();
         }
         return super.transferFrom(from, to, amount);
     }

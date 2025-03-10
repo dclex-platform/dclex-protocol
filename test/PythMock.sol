@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.26;
 
+import {console} from "forge-std/Test.sol";
 import {MockPyth} from "@pythnetwork/pyth-sdk-solidity/MockPyth.sol";
 import {PythStructs} from "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 import {IPyth} from "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
@@ -9,8 +10,8 @@ import "@pythnetwork/pyth-sdk-solidity/PythUtils.sol";
 contract DclexPythMock {
     MockPyth private mockPyth;
 
-    constructor() {
-        mockPyth = new MockPyth(60, 1);
+    constructor(address _mockPyth) {
+        mockPyth = MockPyth(_mockPyth);
     }
 
     function updatePrice(bytes32 priceFeedId, uint256 price) external {
