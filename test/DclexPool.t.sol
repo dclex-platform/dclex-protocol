@@ -2,6 +2,9 @@
 pragma solidity ^0.8.26;
 
 import {Test, console} from "forge-std/Test.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
 import {DclexPool} from "../src/DclexPool.sol";
 import {Stock} from "dclex-blockchain/contracts/dclex/Stock.sol";
@@ -12,7 +15,6 @@ import {TokenBuilder} from "dclex-blockchain/contracts/dclex/TokenBuilder.sol";
 import {DigitalIdentity} from "dclex-blockchain/contracts/dclex/DigitalIdentity.sol";
 import {SignatureUtils} from "dclex-blockchain/contracts/dclex/SignatureUtils.sol";
 import {DeployDclex} from "script/DeployDclex.s.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DclexPythMock} from "./PythMock.sol";
 import {TestBalance} from "./TestBalance.sol";
 import {DclexRouterMock} from "../test/DclexRouterMock.sol";
@@ -1083,10 +1085,10 @@ contract DclexPoolTest is Test, TestBalance {
     function testRemoveLiquidityRevertsWhenCallerHasNotEnoughLiquidityTokens() public {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
 
-        vm.expectRevert("ERC20: burn amount exceeds balance");
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientBalance.selector);
         aaplPool.removeLiquidity(200 ether + 1);
 
-        vm.expectRevert("ERC20: burn amount exceeds balance");
+        vm.expectPartialRevert(IERC20Errors.ERC20InsufficientBalance.selector);
         aaplPool.removeLiquidity(201 ether);
 
         aaplPool.removeLiquidity(200 ether);
@@ -2267,7 +2269,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.initialize(1 ether, 1e6, PYTH_DATA);
 
         vm.prank(POOL_ADMIN);
@@ -2280,7 +2282,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.addLiquidity(1);
 
         vm.prank(POOL_ADMIN);
@@ -2293,7 +2295,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.removeLiquidity(1);
 
         vm.prank(POOL_ADMIN);
@@ -2305,7 +2307,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
 
         vm.prank(POOL_ADMIN);
@@ -2317,7 +2319,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
 
         vm.prank(POOL_ADMIN);
@@ -2330,7 +2332,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.transfer(RECEIVER_1, 1);
 
         vm.prank(POOL_ADMIN);
@@ -2344,7 +2346,7 @@ contract DclexPoolTest is Test, TestBalance {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(Pausable.EnforcedPause.selector);
         aaplPool.transferFrom(address(this), RECEIVER_1, 1);
 
         vm.prank(POOL_ADMIN);
