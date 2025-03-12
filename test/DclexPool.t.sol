@@ -5,11 +5,11 @@ import {Test, console} from "forge-std/Test.sol";
 import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
 import {DclexPool} from "../src/DclexPool.sol";
 import {Stock} from "dclex-blockchain/contracts/dclex/Stock.sol";
+import {ITransferVerifier} from "dclex-blockchain/contracts/interfaces/ITransferVerifier.sol";
 import {USDCMock} from "../test/USDCMock.sol";
 import {Factory} from "dclex-blockchain/contracts/dclex/Factory.sol";
 import {TokenBuilder} from "dclex-blockchain/contracts/dclex/TokenBuilder.sol";
 import {DigitalIdentity} from "dclex-blockchain/contracts/dclex/DigitalIdentity.sol";
-import {SmartcontractIdentity} from "dclex-blockchain/contracts/dclex/SmartcontractIdentity.sol";
 import {SignatureUtils} from "dclex-blockchain/contracts/dclex/SignatureUtils.sol";
 import {DeployDclex} from "script/DeployDclex.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -44,7 +44,6 @@ contract DclexPoolTest is Test, TestBalance {
     DclexPool internal aaplPool;
     DclexPool internal nvdaPool;
     DigitalIdentity internal digitalIdentity;
-    SmartcontractIdentity internal contractIdentity;
     TokenBuilder internal tokenBuilder;
     Factory internal stocksFactory;
     Stock internal aaplStock;
@@ -62,7 +61,6 @@ contract DclexPoolTest is Test, TestBalance {
         DeployDclex.DclexContracts memory contracts = deployer.run(ADMIN, MASTER_ADMIN);
         digitalIdentity = contracts.digitalIdentity;
         stocksFactory = contracts.stocksFactory;
-        contractIdentity = contracts.contractIdentity;
 
         helperConfig = new HelperConfig();
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
@@ -80,9 +78,9 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool = poolDeployer.run(aaplStock, helperConfig);
         nvdaPool = poolDeployer.run(nvdaStock, helperConfig);
         vm.prank(ADMIN);
-        contractIdentity.mintAdmin(address(aaplPool));
+        digitalIdentity.mintAdmin(address(aaplPool), 0, "", ITransferVerifier(address(0)));
         vm.prank(ADMIN);
-        contractIdentity.mintAdmin(address(nvdaPool));
+        digitalIdentity.mintAdmin(address(nvdaPool), 0, "", ITransferVerifier(address(0)));
         AAPL_PRICE_FEED_ID = helperConfig.getPriceFeedId("AAPL");
         NVDA_PRICE_FEED_ID = helperConfig.getPriceFeedId("NVDA");
         USDC_PRICE_FEED_ID = helperConfig.getPriceFeedId("USDC");
@@ -93,8 +91,10 @@ contract DclexPoolTest is Test, TestBalance {
         setupAccount(USER_1);
         setupAccount(USER_2);
         vm.startPrank(ADMIN);
-        digitalIdentity.mintAdmin(RECEIVER_1, 0, "");
-        digitalIdentity.mintAdmin(RECEIVER_2, 0, "");
+        digitalIdentity.mintAdmin(RECEIVER_1, 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(RECEIVER_2, 0, "", ITransferVerifier(address(0)));
+        console.log(digitalIdentity.verifyTransfer(RECEIVER_1, RECEIVER_2, 1));
+        console.log(address(digitalIdentity));
         vm.stopPrank();
         routerMock1 = new DclexRouterMock();
         routerMock2 = new DclexRouterMock();
@@ -105,7 +105,7 @@ contract DclexPoolTest is Test, TestBalance {
     modifier liquidityMinted() {
         address liquidityProvider = makeAddr("liquidityProvider");
         vm.startPrank(ADMIN);
-        digitalIdentity.mintAdmin(liquidityProvider, 0, "");
+        digitalIdentity.mintAdmin(liquidityProvider, 0, "", ITransferVerifier(address(0)));
         vm.stopPrank();
         vm.startPrank(MASTER_ADMIN);
         stocksFactory.forceMintStocks("AAPL", liquidityProvider, 5000 ether);
@@ -126,11 +126,7 @@ contract DclexPoolTest is Test, TestBalance {
     function setupAccount(address account) private {
         usdcMock.mint(account, 100000e6);
         vm.prank(ADMIN);
-        if (account.code.length == 0) {
-            digitalIdentity.mintAdmin(account, 0, "");
-        } else {
-            contractIdentity.mintAdmin(account);
-        }
+        digitalIdentity.mintAdmin(account, 0, "", ITransferVerifier(address(0)));
         vm.startPrank(MASTER_ADMIN);
         stocksFactory.forceMintStocks("AAPL", account, 100000 ether);
         stocksFactory.forceMintStocks("NVDA", account, 10000 ether);
@@ -1231,13 +1227,13 @@ contract DclexPoolTest is Test, TestBalance {
 
         address blockedAddress = address(new USDCMock("", ""));
         vm.prank(ADMIN);
-        contractIdentity.mintAdmin(blockedAddress);
+        digitalIdentity.mintAdmin(blockedAddress, 0, "", ITransferVerifier(address(0)));
         uint256[] memory ids = new uint256[](1);
-        ids[0] = contractIdentity.getId(blockedAddress);
+        ids[0] = digitalIdentity.getId(blockedAddress);
         uint256[] memory valids = new uint256[](1);
         valids[0] = 2;
         vm.prank(ADMIN);
-        contractIdentity.setValids(ids, valids);
+        digitalIdentity.setValids(ids, valids);
 
         vm.expectRevert(InvalidDID.selector);
         aaplPool.transfer(blockedAddress, 1);
@@ -1252,7 +1248,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address verifiedAddress = address(new USDCMock("", ""));
         vm.prank(ADMIN);
-        contractIdentity.mintAdmin(verifiedAddress);
+        digitalIdentity.mintAdmin(verifiedAddress, 0, "", ITransferVerifier(address(0)));
         aaplPool.transfer(verifiedAddress, 1);
 
         aaplPool.approve(address(this), 1);
@@ -1276,7 +1272,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address blockedAddress = makeAddr("blocked");
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(blockedAddress, 0, "");
+        digitalIdentity.mintAdmin(blockedAddress, 0, "", ITransferVerifier(address(0)));
         uint256[] memory ids = new uint256[](1);
         ids[0] = digitalIdentity.getId(blockedAddress);
         uint256[] memory valids = new uint256[](1);
@@ -1297,7 +1293,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address verifiedAddress = makeAddr("verified");
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(verifiedAddress, 0, "");
+        digitalIdentity.mintAdmin(verifiedAddress, 0, "", ITransferVerifier(address(0)));
         aaplPool.transfer(verifiedAddress, 1);
 
         aaplPool.approve(address(this), 1);
