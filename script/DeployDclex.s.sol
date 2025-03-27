@@ -2,15 +2,15 @@
 pragma solidity ^0.8.26;
 
 import {Script} from "forge-std/Script.sol";
-import {Stock} from "dclex-blockchain/contracts/dclex/Stock.sol";
-import {USDCMock} from "dclex-blockchain/contracts/mocks/USDCMock.sol";
-import {Factory} from "dclex-blockchain/contracts/dclex/Factory.sol";
-import {TokenBuilder} from "dclex-blockchain/contracts/dclex/TokenBuilder.sol";
-import {DigitalIdentity} from "dclex-blockchain/contracts/dclex/DigitalIdentity.sol";
-import {SignatureUtils} from "dclex-blockchain/contracts/dclex/SignatureUtils.sol";
-import {Vault} from "dclex-blockchain/contracts/dclex/Vault.sol";
-import {Security} from "dclex-blockchain/contracts/dclex/Security.sol";
-import {MASTER_ADMIN_ROLE} from "dclex-blockchain/contracts/libs/Model.sol";
+import {Stock} from "dclex-mint/contracts/dclex/Stock.sol";
+import {USDCMock} from "dclex-mint/contracts/mocks/USDCMock.sol";
+import {Factory} from "dclex-mint/contracts/dclex/Factory.sol";
+import {TokenBuilder} from "dclex-mint/contracts/dclex/TokenBuilder.sol";
+import {DigitalIdentity} from "dclex-mint/contracts/dclex/DigitalIdentity.sol";
+import {SignatureUtils} from "dclex-mint/contracts/dclex/SignatureUtils.sol";
+import {Vault} from "dclex-mint/contracts/dclex/Vault.sol";
+import {Security} from "dclex-mint/contracts/dclex/Security.sol";
+import {MASTER_ADMIN_ROLE} from "dclex-mint/contracts/libs/Model.sol";
 
 contract DeployDclex is Script {
     struct DclexContracts {

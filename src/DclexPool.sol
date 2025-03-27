@@ -2,8 +2,8 @@
 pragma solidity ^0.8.26;
 
 import {IDclexSwapCallback} from "./IDclexSwapCallback.sol";
-import {IDID} from "dclex-blockchain/contracts/interfaces/IDID.sol";
-import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
+import {IDID} from "dclex-mint/contracts/interfaces/IDID.sol";
+import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -13,7 +13,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IPyth} from "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import {PythStructs} from "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 import "@pythnetwork/pyth-sdk-solidity/PythUtils.sol";
-import {IStock} from "dclex-blockchain/contracts/interfaces/IStock.sol";
+import {IStock} from "dclex-mint/contracts/interfaces/IStock.sol";
 
 contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;

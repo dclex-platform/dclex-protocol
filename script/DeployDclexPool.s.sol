@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {Script, console} from "forge-std/Script.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {DclexPool} from "../src/DclexPool.sol";
-import {IStock} from "dclex-blockchain/contracts/interfaces/IStock.sol";
+import {IStock} from "dclex-mint/contracts/interfaces/IStock.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract DeployDclexPool is Script {
