@@ -56,11 +56,14 @@ contract HelperConfig is Script {
         if (address(localNetworkConfig.pyth) != address(0)) {
             return localNetworkConfig;
         }
+        vm.startBroadcast();
+        IPyth pyth = new MockPyth(60, 1);
         IERC20 usdcToken = new USDCMock("USDC", "USD Coin");
+        vm.stopBroadcast();
         localNetworkConfig = NetworkConfig({
             admin: makeAddr("pool_admin"),
             usdcToken: usdcToken,
-            pyth: new MockPyth(60, 1)
+            pyth: pyth
         });
         return localNetworkConfig;
     }
