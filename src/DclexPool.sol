@@ -35,6 +35,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     IERC20 public immutable usdcToken;
     bytes32 private immutable stockPriceFeedId;
     bytes32 private immutable usdcPriceFeedId;
+    uint256 private immutable maxPriceStaleness;
     bool private initialized = false;
     uint256 private feeCurveA;
     uint256 private feeCurveB;
@@ -74,7 +75,8 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         IPyth _pyth,
         bytes32 _stockPriceFeedId,
         bytes32 _usdcPriceFeedId,
-        address admin
+        address admin,
+        uint256 _maxPriceStaleness
     )
         ERC20(
             string.concat(_stockToken.symbol(), "-LP"),
@@ -86,6 +88,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         usdcToken = _usdcToken;
         stockPriceFeedId = _stockPriceFeedId;
         usdcPriceFeedId = _usdcPriceFeedId;
+        maxPriceStaleness = _maxPriceStaleness;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
@@ -352,7 +355,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     ) private view returns (uint256 price) {
         PythStructs.Price memory pythPrice = pyth.getPriceNoOlderThan(
             priceFeedId,
-            60
+            maxPriceStaleness
         );
         price = PythUtils.convertToUint(
             pythPrice.price,

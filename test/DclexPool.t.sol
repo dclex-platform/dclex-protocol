@@ -77,8 +77,8 @@ contract DclexPoolTest is Test, TestBalance {
         aaplStock = Stock(stocksFactory.stocks("AAPL"));
         nvdaStock = Stock(stocksFactory.stocks("NVDA"));
         DeployDclexPool poolDeployer = new DeployDclexPool();
-        aaplPool = poolDeployer.run(aaplStock, helperConfig);
-        nvdaPool = poolDeployer.run(nvdaStock, helperConfig);
+        aaplPool = poolDeployer.run(aaplStock, helperConfig, 60);
+        nvdaPool = poolDeployer.run(nvdaStock, helperConfig, 60);
         vm.prank(ADMIN);
         digitalIdentity.mintAdmin(address(aaplPool), 0, "", ITransferVerifier(address(0)));
         vm.prank(ADMIN);
