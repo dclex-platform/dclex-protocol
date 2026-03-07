@@ -12,6 +12,7 @@ contract FIOracle is IPriceOracle, AccessControl {
 
     error InvalidSignature();
     error InvalidUpdateData();
+    error FuturePublishTime();
 
     address public trustedSigner;
     mapping(bytes32 => Price) private priceFeeds;
@@ -77,6 +78,11 @@ contract FIOracle is IPriceOracle, AccessControl {
         int64 price = int64(uint64(bytes8(data[32:40])));
         int32 expo = int32(uint32(bytes4(data[40:44])));
         uint64 publishTime = uint64(bytes8(data[44:52]));
+
+        // Reject future timestamps to prevent underflow in getPriceNoOlderThan
+        if (publishTime > block.timestamp) {
+            revert FuturePublishTime();
+        }
 
         // Only accept newer prices
         if (publishTime <= priceFeeds[feedId].publishTime) {

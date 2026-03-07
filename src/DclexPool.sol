@@ -24,6 +24,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     error DclexPool__NotEnoughPoolLiquidity();
     error DclexPool__FeesCannotBeNegative();
     error DclexPool__ProtocolFeeRateTooHigh();
+    error DclexPool__InvalidPriceOrExponent();
 
     uint256 private constant MAX_PROTOCOL_FEE_RATE = 0.15 ether;
     uint8 private constant DECIMALS = 18;
@@ -102,11 +103,16 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     function updatePriceFeeds(
         bytes[] memory priceUpdateData
     ) public payable {
+        uint256 balanceBefore = address(this).balance - msg.value;
         if (priceUpdateData.length > 0) {
             uint256 fee = oracle.getUpdateFee(priceUpdateData);
             oracle.updatePriceFeeds{value: fee}(priceUpdateData);
         }
-        _refundEth();
+        uint256 refund = address(this).balance - balanceBefore;
+        if (refund > 0) {
+            (bool success, ) = msg.sender.call{value: refund}(new bytes(0));
+            if (!success) revert DclexPool__NativeTransferFailed();
+        }
     }
 
     function initialize(
@@ -360,7 +366,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         uint8 targetDecimals
     ) private pure returns (uint256) {
         if (price < 0 || expo > 0 || expo < -255) {
-            revert();
+            revert DclexPool__InvalidPriceOrExponent();
         }
         uint8 priceDecimals = uint8(uint32(-1 * expo));
         if (targetDecimals >= priceDecimals) {
@@ -489,12 +495,4 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         return super.transferFrom(from, to, amount);
     }
 
-    function _refundEth() private {
-        if (address(this).balance > 0) {
-            (bool success, ) = msg.sender.call{value: address(this).balance}(
-                new bytes(0)
-            );
-            if (!success) revert DclexPool__NativeTransferFailed();
-        }
-    }
 }
