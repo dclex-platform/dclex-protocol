@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {IDclexSwapCallback} from "./IDclexSwapCallback.sol";
+import {IPriceOracle} from "./IPriceOracle.sol";
 import {IDID} from "dclex-mint/contracts/interfaces/IDID.sol";
 import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -10,9 +11,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IPyth} from "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
-import {PythStructs} from "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
-import "@pythnetwork/pyth-sdk-solidity/PythUtils.sol";
 import {IStock} from "dclex-mint/contracts/interfaces/IStock.sol";
 
 contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
@@ -30,11 +28,10 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     uint256 private constant MAX_PROTOCOL_FEE_RATE = 0.15 ether;
     uint8 private constant DECIMALS = 18;
     uint8 private constant USDC_DECIMALS = 6;
-    IPyth private immutable pyth;
+    IPriceOracle private immutable oracle;
     IStock public immutable stockToken;
     IERC20 public immutable usdcToken;
     bytes32 private immutable stockPriceFeedId;
-    bytes32 private immutable usdcPriceFeedId;
     uint256 private immutable maxPriceStaleness;
     bool private initialized = false;
     uint256 private feeCurveA;
@@ -72,9 +69,8 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     constructor(
         IStock _stockToken,
         IERC20 _usdcToken,
-        IPyth _pyth,
+        IPriceOracle _oracle,
         bytes32 _stockPriceFeedId,
-        bytes32 _usdcPriceFeedId,
         address admin,
         uint256 _maxPriceStaleness
     )
@@ -83,11 +79,10 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
             string.concat(_stockToken.symbol(), "-LP")
         )
     {
-        pyth = _pyth;
+        oracle = _oracle;
         stockToken = _stockToken;
         usdcToken = _usdcToken;
         stockPriceFeedId = _stockPriceFeedId;
-        usdcPriceFeedId = _usdcPriceFeedId;
         maxPriceStaleness = _maxPriceStaleness;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
@@ -104,12 +99,12 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         emit FeeCurveUpdated(baseFeeRate, sensitivity);
     }
 
-    function updatePythPriceFeeds(
-        bytes[] memory pythUpdateData
+    function updatePriceFeeds(
+        bytes[] memory priceUpdateData
     ) public payable {
-        if (pythUpdateData.length > 0) {
-            uint256 pythFee = pyth.getUpdateFee(pythUpdateData);
-            pyth.updatePriceFeeds{value: pythFee}(pythUpdateData);
+        if (priceUpdateData.length > 0) {
+            uint256 fee = oracle.getUpdateFee(priceUpdateData);
+            oracle.updatePriceFeeds{value: fee}(priceUpdateData);
         }
         _refundEth();
     }
@@ -117,16 +112,15 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     function initialize(
         uint256 stockAmount,
         uint256 usdcAmount,
-        bytes[] memory pythUpdateData
+        bytes[] memory priceUpdateData
     ) public payable whenNotPaused nonReentrant {
         if (initialized) {
             revert DclexPool__AlreadyInitialized();
         }
-        updatePythPriceFeeds(pythUpdateData);
+        updatePriceFeeds(priceUpdateData);
         uint256 stockUsdValue = (stockAmount *
             currentUsdPrice(stockPriceFeedId)) / 1e18;
-        uint256 usdcUsdValue = (usdcAmount * currentUsdPrice(usdcPriceFeedId)) /
-            1e6;
+        uint256 usdcUsdValue = usdcAmount * 1e12;
         uint256 liquidityAmount = (stockUsdValue + usdcUsdValue);
         initialized = true;
         stockToken.safeTransferFrom(msg.sender, address(this), stockAmount);
@@ -167,9 +161,9 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         uint256 exactInputAmount,
         address recipient,
         bytes memory callbackData,
-        bytes[] memory pythUpdateData
+        bytes[] memory priceUpdateData
     ) external payable whenNotPaused nonReentrant returns (uint256) {
-        updatePythPriceFeeds(pythUpdateData);
+        updatePriceFeeds(priceUpdateData);
         exactInputAmount *= (usdcInput ? 1e12 : 1);
         address inputToken = usdcInput
             ? address(usdcToken)
@@ -178,7 +172,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
             ? address(stockToken)
             : address(usdcToken);
         uint256 stockTokenPrice = getStockTokenPrice();
-        uint256 usdcTokenPrice = currentUsdPrice(usdcPriceFeedId);
+        uint256 usdcTokenPrice = 1e18;
         uint256 netOutputTokenAmount;
         {
             uint256 outputTokenPrice = usdcInput
@@ -256,9 +250,9 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         uint256 exactOutputAmount,
         address recipient,
         bytes memory callbackData,
-        bytes[] memory pythUpdateData
+        bytes[] memory priceUpdateData
     ) external payable whenNotPaused nonReentrant returns (uint256) {
-        updatePythPriceFeeds(pythUpdateData);
+        updatePriceFeeds(priceUpdateData);
         exactOutputAmount *= (usdcInput ? 1 : 1e12);
         address inputToken = usdcInput
             ? address(usdcToken)
@@ -267,7 +261,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
             ? address(stockToken)
             : address(usdcToken);
         uint256 stockTokenPrice = getStockTokenPrice();
-        uint256 usdcTokenPrice = currentUsdPrice(usdcPriceFeedId);
+        uint256 usdcTokenPrice = 1e18;
         uint256 grossInputTokenAmount;
         {
             uint256 outputTokenPrice = usdcInput
@@ -352,16 +346,28 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
 
     function currentUsdPrice(
         bytes32 priceFeedId
-    ) private view returns (uint256 price) {
-        PythStructs.Price memory pythPrice = pyth.getPriceNoOlderThan(
+    ) private view returns (uint256) {
+        IPriceOracle.Price memory p = oracle.getPriceNoOlderThan(
             priceFeedId,
             maxPriceStaleness
         );
-        price = PythUtils.convertToUint(
-            pythPrice.price,
-            pythPrice.expo,
-            DECIMALS
-        );
+        return _convertToUint(p.price, p.expo, DECIMALS);
+    }
+
+    function _convertToUint(
+        int64 price,
+        int32 expo,
+        uint8 targetDecimals
+    ) private pure returns (uint256) {
+        if (price < 0 || expo > 0 || expo < -255) {
+            revert();
+        }
+        uint8 priceDecimals = uint8(uint32(-1 * expo));
+        if (targetDecimals >= priceDecimals) {
+            return uint256(uint64(price)) * 10 ** uint32(targetDecimals - priceDecimals);
+        } else {
+            return uint256(uint64(price)) / 10 ** uint32(priceDecimals - targetDecimals);
+        }
     }
 
     function getBuyFeeRate(
@@ -466,7 +472,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         address to,
         uint256 amount
     ) public override whenNotPaused nonReentrant returns (bool) {
-        if (!stockToken.DID().verifyTransfer(msg.sender, to, amount)) {
+        if (!stockToken.DID().verifyTransfer(msg.sender, to)) {
             revert InvalidDID();
         }
         return super.transfer(to, amount);
@@ -477,7 +483,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         address to,
         uint256 amount
     ) public override whenNotPaused nonReentrant returns (bool) {
-        if (!stockToken.DID().verifyTransfer(from, to, amount)) {
+        if (!stockToken.DID().verifyTransfer(from, to)) {
             revert InvalidDID();
         }
         return super.transferFrom(from, to, amount);

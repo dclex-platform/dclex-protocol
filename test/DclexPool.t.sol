@@ -8,7 +8,6 @@ import {IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
 import {DclexPool} from "../src/DclexPool.sol";
 import {Stock} from "dclex-mint/contracts/dclex/Stock.sol";
-import {ITransferVerifier} from "dclex-mint/contracts/interfaces/ITransferVerifier.sol";
 import {USDCMock} from "../test/USDCMock.sol";
 import {Factory} from "dclex-mint/contracts/dclex/Factory.sol";
 import {TokenBuilder} from "dclex-mint/contracts/dclex/TokenBuilder.sol";
@@ -16,6 +15,7 @@ import {DigitalIdentity} from "dclex-mint/contracts/dclex/DigitalIdentity.sol";
 import {SignatureUtils} from "dclex-mint/contracts/dclex/SignatureUtils.sol";
 import {DeployDclex} from "script/DeployDclex.s.sol";
 import {DclexPythMock} from "./PythMock.sol";
+import {PythAdapter} from "../src/PythAdapter.sol";
 import {TestBalance} from "./TestBalance.sol";
 import {DclexRouterMock} from "../test/DclexRouterMock.sol";
 import {DeployDclexPool} from "script/DeployDclexPool.s.sol";
@@ -34,7 +34,6 @@ contract DclexPoolTest is Test, TestBalance {
 
     bytes32 internal AAPL_PRICE_FEED_ID;
     bytes32 internal NVDA_PRICE_FEED_ID;
-    bytes32 internal USDC_PRICE_FEED_ID;
     bytes[] internal PYTH_DATA = new bytes[](0);
     address internal POOL_ADMIN;
     address internal ADMIN = makeAddr("admin");
@@ -68,7 +67,7 @@ contract DclexPoolTest is Test, TestBalance {
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
         POOL_ADMIN = config.admin;
         usdcMock = USDCMock(address(config.usdcToken));
-        pythMock = new DclexPythMock(address(config.pyth));
+        pythMock = new DclexPythMock(address(PythAdapter(address(config.oracle)).pyth()));
         vm.deal(address(pythMock), 1 ether);
         vm.startPrank(ADMIN);
         stocksFactory.createStocks("Apple", "AAPL");
@@ -80,22 +79,20 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool = poolDeployer.run(aaplStock, helperConfig, 60);
         nvdaPool = poolDeployer.run(nvdaStock, helperConfig, 60);
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(address(aaplPool), 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(address(aaplPool), 0, bytes32(0));
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(address(nvdaPool), 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(address(nvdaPool), 0, bytes32(0));
         AAPL_PRICE_FEED_ID = helperConfig.getPriceFeedId("AAPL");
         NVDA_PRICE_FEED_ID = helperConfig.getPriceFeedId("NVDA");
-        USDC_PRICE_FEED_ID = helperConfig.getPriceFeedId("USDC");
-        updatePrice(USDC_PRICE_FEED_ID, 1 ether);
         updatePrice(AAPL_PRICE_FEED_ID, 1 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 1 ether);
         setupAccount(address(this));
         setupAccount(USER_1);
         setupAccount(USER_2);
         vm.startPrank(ADMIN);
-        digitalIdentity.mintAdmin(RECEIVER_1, 0, "", ITransferVerifier(address(0)));
-        digitalIdentity.mintAdmin(RECEIVER_2, 0, "", ITransferVerifier(address(0)));
-        console.log(digitalIdentity.verifyTransfer(RECEIVER_1, RECEIVER_2, 1));
+        digitalIdentity.mintAdmin(RECEIVER_1, 0, bytes32(0));
+        digitalIdentity.mintAdmin(RECEIVER_2, 0, bytes32(0));
+        console.log(digitalIdentity.verifyTransfer(RECEIVER_1, RECEIVER_2));
         console.log(address(digitalIdentity));
         vm.stopPrank();
         routerMock1 = new DclexRouterMock();
@@ -107,9 +104,9 @@ contract DclexPoolTest is Test, TestBalance {
     modifier liquidityMinted() {
         address liquidityProvider = makeAddr("liquidityProvider");
         vm.startPrank(ADMIN);
-        digitalIdentity.mintAdmin(liquidityProvider, 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(liquidityProvider, 0, bytes32(0));
         vm.stopPrank();
-        vm.startPrank(MASTER_ADMIN);
+        vm.startPrank(ADMIN);
         stocksFactory.forceMintStocks("AAPL", liquidityProvider, 5000 ether);
         stocksFactory.forceMintStocks("NVDA", liquidityProvider, 5000 ether);
         vm.stopPrank();
@@ -128,8 +125,8 @@ contract DclexPoolTest is Test, TestBalance {
     function setupAccount(address account) private {
         usdcMock.mint(account, 100000e6);
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(account, 0, "", ITransferVerifier(address(0)));
-        vm.startPrank(MASTER_ADMIN);
+        digitalIdentity.mintAdmin(account, 0, bytes32(0));
+        vm.startPrank(ADMIN);
         stocksFactory.forceMintStocks("AAPL", account, 100000 ether);
         stocksFactory.forceMintStocks("NVDA", account, 10000 ether);
         vm.startPrank(account);
@@ -475,49 +472,6 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceDecreased(1e6);
     }
 
-    function testSellSwapExactOutputTakesUsdcPriceIntoAccount() public liquidityMinted {
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(0.8 ether);
-
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 10e6, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(8 ether);
-
-        updatePrice(USDC_PRICE_FEED_ID, 0.5 ether);
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(0.5 ether);
-
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(0.04 ether);
-    }
-
-    function testBuySwapExactOutputTakesUsdcPriceIntoAccount() public liquidityMinted {
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(1.25e6);
-
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 10 ether, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(12.5e6);
-
-        updatePrice(USDC_PRICE_FEED_ID, 0.5 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(2e6);
-
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
-        assertBalanceDecreased(25e6);
-    }
 
     function testSwapExactOutputRoundsTakenInputTokenAmountUp() public liquidityMinted {
         updatePrice(AAPL_PRICE_FEED_ID, 3 ether);
@@ -707,27 +661,6 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(outputBalanceAfter - outputBalanceBefore, 333333333333333333);
     }
 
-    function testSellSwapExactInputTakesUsdcPriceIntoAccount() public liquidityMinted {
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(1.25e6);
-
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 10 ether, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(12.5e6);
-
-        updatePrice(USDC_PRICE_FEED_ID, 0.5 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(2e6);
-
-        updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(25e6);
-    }
 
     function testSellExactInputTakesStockMultiplierIntoAccount() public liquidityMinted {
         recordBalance(address(usdcMock), address(this));
@@ -789,27 +722,6 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreased(1 ether);
     }
 
-    function testBuySwapExactInputTakesUsdcPriceIntoAccount() public liquidityMinted {
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(0.8 ether);
-
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 10e6, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(8 ether);
-
-        updatePrice(USDC_PRICE_FEED_ID, 0.5 ether);
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(0.5 ether);
-
-        updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-        recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
-        assertBalanceIncreased(0.04 ether);
-    }
 
     function testBuyExactInputRevertsIfItWouldDrainPoolOutOfStocks() public liquidityMinted {
         uint256 aaplPoolBalance = aaplStock.balanceOf(address(aaplPool));
@@ -877,19 +789,6 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceDecreased(5 ether);
     }
 
-    function testInitializeTakesUsdcPriceIntoAccount() public {
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
-
-        recordBalance(address(aaplPool), address(this));
-        aaplPool.initialize(1 ether, 1e6, PYTH_DATA);
-        assertBalanceIncreased(1.8 ether);
-
-        updatePrice(USDC_PRICE_FEED_ID, 1.5 ether);
-
-        recordBalance(address(nvdaPool), address(this));
-        nvdaPool.initialize(1 ether, 1e6, PYTH_DATA);
-        assertBalanceIncreased(2.5 ether);
-    }
 
     function testInitializeCannotBeCalledAgain() public {
         aaplPool.initialize(1 ether, 1e6, PYTH_DATA);
@@ -1229,7 +1128,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address blockedAddress = address(new USDCMock("", ""));
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(blockedAddress, 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(blockedAddress, 0, bytes32(0));
         uint256[] memory ids = new uint256[](1);
         ids[0] = digitalIdentity.getId(blockedAddress);
         uint256[] memory valids = new uint256[](1);
@@ -1250,7 +1149,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address verifiedAddress = address(new USDCMock("", ""));
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(verifiedAddress, 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(verifiedAddress, 0, bytes32(0));
         aaplPool.transfer(verifiedAddress, 1);
 
         aaplPool.approve(address(this), 1);
@@ -1274,7 +1173,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address blockedAddress = makeAddr("blocked");
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(blockedAddress, 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(blockedAddress, 0, bytes32(0));
         uint256[] memory ids = new uint256[](1);
         ids[0] = digitalIdentity.getId(blockedAddress);
         uint256[] memory valids = new uint256[](1);
@@ -1295,7 +1194,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address verifiedAddress = makeAddr("verified");
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(verifiedAddress, 0, "", ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(verifiedAddress, 0, bytes32(0));
         aaplPool.transfer(verifiedAddress, 1);
 
         aaplPool.approve(address(this), 1);
@@ -1952,22 +1851,6 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcFees, 0);
     }
 
-    function testUsdcPriceInfluencesPoolBalance() public liquidityMinted {
-        vm.prank(POOL_ADMIN);
-        aaplPool.setFeeCurve(0.016 ether, 0.016 ether);
-
-        updatePrice(USDC_PRICE_FEED_ID, 1 ether);
-        setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        assertUSDCToStockExactOutputFeeRate(aaplPool, 0.016 ether);
-
-        setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        updatePrice(USDC_PRICE_FEED_ID, 0.25 ether);
-        recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
-        int256 balanceChange = getBalanceChange();
-        int256 feeRate = (-balanceChange - 4e6) * 1e12 / 4;
-        assertApproxEqAbsDecimal(feeRate, 0.00625 ether, 0.001 ether, 18);
-    }
 
     function testBuyExactOutputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate() public liquidityMinted {
         vm.startPrank(POOL_ADMIN);
@@ -2410,32 +2293,28 @@ contract DclexPoolTest is Test, TestBalance {
     }
 
     function testSwapExactInputEmitsSwapExecutedEvent() external liquidityMinted {
-        updatePrice(USDC_PRICE_FEED_ID, 1 ether);
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         vm.expectEmit(address(aaplPool));
         emit SwapExecuted(true, 100e6, 5 ether, 20 ether, 1 ether, USER_1);
         aaplPool.swapExactInput(true, 100e6, USER_1, "", PYTH_DATA);
 
-        updatePrice(USDC_PRICE_FEED_ID, 0.8 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 30 ether);
         vm.expectEmit(address(nvdaPool));
-        emit SwapExecuted(false, 2 ether, 75e6, 30 ether, 0.8 ether, USER_2);
+        emit SwapExecuted(false, 2 ether, 60e6, 30 ether, 1 ether, USER_2);
         nvdaPool.swapExactInput(false, 2 ether, USER_2, "", PYTH_DATA);
     }
 
     function testSwapExactOutputEmitsSwapExecutedEvent() external liquidityMinted {
-        updatePrice(USDC_PRICE_FEED_ID, 1 ether);
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         vm.expectEmit(address(aaplPool));
         emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, USER_1);
         aaplPool.swapExactOutput(true, 1 ether, USER_1, "", PYTH_DATA);
 
-        updatePrice(USDC_PRICE_FEED_ID, 0.9 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 30 ether);
         vm.expectEmit(address(nvdaPool));
-        emit SwapExecuted(false, 9 ether, 300e6, 30 ether, 0.9 ether, USER_2);
+        emit SwapExecuted(false, 10 ether, 300e6, 30 ether, 1 ether, USER_2);
         nvdaPool.swapExactOutput(false, 300e6, USER_2, "", PYTH_DATA);
     }
 
@@ -2473,45 +2352,41 @@ contract DclexPoolTest is Test, TestBalance {
     }
 
     function testUpdatePythPriceFeedsUpdatesPriceFeed() external liquidityMinted {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
 
-        aaplPool.updatePythPriceFeeds{value: expectedFee}(pythData);
+        aaplPool.updatePriceFeeds{value: expectedFee}(pythData);
 
         vm.expectEmit(address(aaplPool));
-        emit SwapExecuted(true, 25e6, 1 ether, 20 ether, 0.8 ether, address(this));
-        aaplPool.swapExactInput{value: 1 ether}(true, 25e6, address(this), "", PYTH_DATA);
+        emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, address(this));
+        aaplPool.swapExactInput{value: 1 ether}(true, 20e6, address(this), "", PYTH_DATA);
     }
 
     function testUpdatePythPriceFeedsRefundsLeftoverEther() external liquidityMinted {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
 
         uint256 ethBalanceBefore = address(this).balance;
-        aaplPool.updatePythPriceFeeds{value: expectedFee}(pythData);
+        aaplPool.updatePriceFeeds{value: expectedFee}(pythData);
         uint256 ethBalanceAfter = address(this).balance;
         assertEq(ethBalanceBefore - ethBalanceAfter, expectedFee);
     }
 
     function testInitializeUpdatesPythPriceFeed() external {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
 
         vm.expectEmit(address(aaplPool));
-        emit LiquidityAdded(20.8 ether, 1 ether, 1e6);
+        emit LiquidityAdded(21 ether, 1 ether, 1e6);
         aaplPool.initialize{value: expectedFee}(1 ether, 1e6, pythData);
     }
 
     function testInitializeRefundsLeftoverEther() external {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
 
         uint256 ethBalanceBefore = address(this).balance;
@@ -2521,38 +2396,34 @@ contract DclexPoolTest is Test, TestBalance {
     }
 
     function testSwapExactInputUpdatesPriceFeed() external liquidityMinted {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         vm.expectEmit(address(aaplPool));
-        emit SwapExecuted(true, 25e6, 1 ether, 20 ether, 0.8 ether, address(this));
-        aaplPool.swapExactInput{value: 1 ether}(true, 25e6, address(this), "", pythData);
+        emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, address(this));
+        aaplPool.swapExactInput{value: 1 ether}(true, 20e6, address(this), "", pythData);
     }
 
     function testSwapExactInputRefundsLeftoverEther() external liquidityMinted {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
         uint256 ethBalanceBefore = address(this).balance;
-        aaplPool.swapExactInput{value: 1 ether}(true, 25e6, address(this), "", pythData);
+        aaplPool.swapExactInput{value: 1 ether}(true, 20e6, address(this), "", pythData);
         uint256 ethBalanceAfter = address(this).balance;
         assertEq(ethBalanceBefore - ethBalanceAfter, expectedFee);
     }
 
     function testSwapExactOutputUpdatesPriceFeed() external liquidityMinted {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         vm.expectEmit(address(aaplPool));
-        emit SwapExecuted(true, 25e6, 1 ether, 20 ether, 0.8 ether, address(this));
+        emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, address(this));
         aaplPool.swapExactOutput{value: 1 ether}(true, 1 ether, address(this), "", pythData);
     }
 
     function testSwapExactOutputRefundsLeftoverEther() external liquidityMinted {
-        bytes[] memory pythData = new bytes[](2);
+        bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
-        pythData[1] = pythMock.getUpdatePriceData(USDC_PRICE_FEED_ID, 0.8 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
         uint256 ethBalanceBefore = address(this).balance;
         aaplPool.swapExactOutput{value: 1 ether}(true, 1 ether, address(this), "", pythData);
