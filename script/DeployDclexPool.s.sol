@@ -18,14 +18,12 @@ contract DeployDclexPool is Script {
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
         string memory stockSymbol = stockToken.symbol();
         bytes32 stockPriceFeedId = helperConfig.getPriceFeedId(stockSymbol);
-        bytes32 usdcPriceFeedId = helperConfig.getPriceFeedId("USDC");
         vm.startBroadcast();
         DclexPool dclexPool = new DclexPool(
             stockToken,
             config.usdcToken,
-            config.pyth,
+            config.oracle,
             stockPriceFeedId,
-            usdcPriceFeedId,
             config.admin,
             maxPriceStaleness
         );
