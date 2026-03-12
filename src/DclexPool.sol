@@ -20,6 +20,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     error DclexPool__AlreadyInitialized();
     error DclexPool__NotInitialized();
     error DclexPool__InsufficientInputAmount();
+    error DclexPool__ZeroOutputAmount();
     error DclexPool__NativeTransferFailed();
     error DclexPool__NotEnoughPoolLiquidity();
     error DclexPool__FeesCannotBeNegative();
@@ -223,6 +224,10 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
             netOutputTokenAmount /= 1e12;
         }
 
+        if (netOutputTokenAmount == 0) {
+            revert DclexPool__ZeroOutputAmount();
+        }
+
         IERC20(outputToken).safeTransfer(recipient, netOutputTokenAmount);
         {
             uint256 inputBalanceBefore = IERC20(inputToken).balanceOf(
@@ -312,6 +317,10 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
             grossInputTokenAmount /= 1e12;
         } else {
             exactOutputAmount /= 1e12;
+        }
+
+        if (grossInputTokenAmount == 0) {
+            revert DclexPool__ZeroOutputAmount();
         }
 
         IERC20(outputToken).safeTransfer(recipient, exactOutputAmount);
