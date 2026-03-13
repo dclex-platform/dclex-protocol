@@ -4,7 +4,6 @@ pragma solidity ^0.8.26;
 import {NonfungiblePositionManager} from "@uniswap/v3-periphery/contracts/NonfungiblePositionManager.sol";
 import {TransferGated} from "../base/TransferGated.sol";
 import {IDID} from "dclex-mint/contracts/interfaces/IDID.sol";
-import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
 
 /// @title DID-Gated Nonfungible Position Manager
 /// @notice Extends Uniswap V3 NonfungiblePositionManager with DID verification for transfers
@@ -43,13 +42,8 @@ contract DclexPositionManager is NonfungiblePositionManager, TransferGated {
     ) internal override returns (address) {
         address from = _ownerOf(tokenId);
 
-        // Skip DID check for mints (from == address(0)) and burns (to == address(0))
-        if (from != address(0) && to != address(0)) {
-            // Use amount=1 for NFT transfers since each transfer is exactly 1 token
-            if (!_getDID().verifyTransfer(from, to, 1)) {
-                revert InvalidDID();
-            }
-        }
+        // Use amount=1 for NFT transfers since each transfer is exactly 1 token
+        _verifyTransferActors(from, to, 1);
 
         return super._update(to, tokenId, auth);
     }

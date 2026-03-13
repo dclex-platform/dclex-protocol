@@ -14,13 +14,26 @@ abstract contract TransferGated {
     function _getDID() internal view virtual returns (IDID);
 
     /// @notice Modifier that verifies both sender and receiver have valid DIDs
+    /// @dev Bypasses verification for mints (from == address(0)) and burns (to == address(0))
     /// @param from The address sending tokens
     /// @param to The address receiving tokens
     /// @param amount The amount being transferred (used for interface compatibility)
     modifier checkTransferActors(address from, address to, uint256 amount) {
-        if (!_getDID().verifyTransfer(from, to, amount)) {
-            revert InvalidDID();
-        }
+        _verifyTransferActors(from, to, amount);
         _;
+    }
+
+    /// @notice Internal function to verify transfer actors have valid DIDs
+    /// @dev Bypasses verification for mints (from == address(0)) and burns (to == address(0))
+    /// @param from The address sending tokens
+    /// @param to The address receiving tokens
+    /// @param amount The amount being transferred (used for interface compatibility)
+    function _verifyTransferActors(address from, address to, uint256 amount) internal {
+        // Skip DID verification for mints and burns
+        if (from != address(0) && to != address(0)) {
+            if (!_getDID().verifyTransfer(from, to, amount)) {
+                revert InvalidDID();
+            }
+        }
     }
 }
