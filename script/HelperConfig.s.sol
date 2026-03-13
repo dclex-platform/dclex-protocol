@@ -7,7 +7,7 @@ import {PythAdapter} from "../src/PythAdapter.sol";
 import {FIOracle} from "../src/FIOracle.sol";
 import {IPyth} from "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {USDCMock} from "../test/USDCMock.sol";
+import {USDCMock} from "../test/mocks/USDCMock.sol";
 import {MockPyth} from "@pythnetwork/pyth-sdk-solidity/MockPyth.sol";
 
 contract HelperConfig is Script {
@@ -89,7 +89,7 @@ contract HelperConfig is Script {
         // Use FIOracle for primelta-dev with backend signer as trusted signer
         FIOracle fiOracle = new FIOracle(
             0x971b5a2872ec17EeDDED9fc4dd691D8B33B97031, // backend signer
-            0x70997970C51812dc3A010C7d01b50e0d17dc79C8  // admin
+            0x70997970C51812dc3A010C7d01b50e0d17dc79C8 // admin
         );
         vm.stopBroadcast();
         primeltaDevNetworkConfig = NetworkConfig({
