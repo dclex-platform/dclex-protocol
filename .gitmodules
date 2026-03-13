@@ -13,3 +13,11 @@
 [submodule "lib/dclex-mint"]
 	path = lib/dclex-mint
 	url = https://github.com/dclex-platform/dclex-mint
+[submodule "lib/v3-core"]
+	path = lib/v3-core
+	url = https://github.com/dclex-platform/v3-core
+	branch = 0.8
+[submodule "lib/v3-periphery"]
+	path = lib/v3-periphery
+	url = https://github.com/dclex-platform/v3-periphery
+	branch = 0.8

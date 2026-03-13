@@ -478,7 +478,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         address to,
         uint256 amount
     ) public override whenNotPaused nonReentrant returns (bool) {
-        if (!stockToken.DID().verifyTransfer(msg.sender, to)) {
+        if (!stockToken.DID().verifyTransfer(msg.sender, to, amount)) {
             revert InvalidDID();
         }
         return super.transfer(to, amount);
@@ -489,7 +489,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         address to,
         uint256 amount
     ) public override whenNotPaused nonReentrant returns (bool) {
-        if (!stockToken.DID().verifyTransfer(from, to)) {
+        if (!stockToken.DID().verifyTransfer(from, to, amount)) {
             revert InvalidDID();
         }
         return super.transferFrom(from, to, amount);

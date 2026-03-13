@@ -6,6 +6,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
+import {ITransferVerifier} from "dclex-mint/contracts/interfaces/ITransferVerifier.sol";
 import {DclexPool} from "../src/DclexPool.sol";
 import {Stock} from "dclex-mint/contracts/dclex/Stock.sol";
 import {USDCMock} from "../test/USDCMock.sol";
@@ -79,9 +80,9 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool = poolDeployer.run(aaplStock, helperConfig, 60);
         nvdaPool = poolDeployer.run(nvdaStock, helperConfig, 60);
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(address(aaplPool), 0, bytes32(0));
+        digitalIdentity.mintAdmin(address(aaplPool), 0, bytes32(0), ITransferVerifier(address(0)));
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(address(nvdaPool), 0, bytes32(0));
+        digitalIdentity.mintAdmin(address(nvdaPool), 0, bytes32(0), ITransferVerifier(address(0)));
         AAPL_PRICE_FEED_ID = helperConfig.getPriceFeedId("AAPL");
         NVDA_PRICE_FEED_ID = helperConfig.getPriceFeedId("NVDA");
         updatePrice(AAPL_PRICE_FEED_ID, 1 ether);
@@ -90,9 +91,9 @@ contract DclexPoolTest is Test, TestBalance {
         setupAccount(USER_1);
         setupAccount(USER_2);
         vm.startPrank(ADMIN);
-        digitalIdentity.mintAdmin(RECEIVER_1, 0, bytes32(0));
-        digitalIdentity.mintAdmin(RECEIVER_2, 0, bytes32(0));
-        console.log(digitalIdentity.verifyTransfer(RECEIVER_1, RECEIVER_2));
+        digitalIdentity.mintAdmin(RECEIVER_1, 0, bytes32(0), ITransferVerifier(address(0)));
+        digitalIdentity.mintAdmin(RECEIVER_2, 0, bytes32(0), ITransferVerifier(address(0)));
+        console.log(digitalIdentity.verifyTransfer(RECEIVER_1, RECEIVER_2, 0));
         console.log(address(digitalIdentity));
         vm.stopPrank();
         routerMock1 = new DclexRouterMock();
@@ -104,7 +105,7 @@ contract DclexPoolTest is Test, TestBalance {
     modifier liquidityMinted() {
         address liquidityProvider = makeAddr("liquidityProvider");
         vm.startPrank(ADMIN);
-        digitalIdentity.mintAdmin(liquidityProvider, 0, bytes32(0));
+        digitalIdentity.mintAdmin(liquidityProvider, 0, bytes32(0), ITransferVerifier(address(0)));
         vm.stopPrank();
         vm.startPrank(ADMIN);
         stocksFactory.forceMintStocks("AAPL", liquidityProvider, 5000 ether);
@@ -125,7 +126,7 @@ contract DclexPoolTest is Test, TestBalance {
     function setupAccount(address account) private {
         usdcMock.mint(account, 100000e6);
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(account, 0, bytes32(0));
+        digitalIdentity.mintAdmin(account, 0, bytes32(0), ITransferVerifier(address(0)));
         vm.startPrank(ADMIN);
         stocksFactory.forceMintStocks("AAPL", account, 100000 ether);
         stocksFactory.forceMintStocks("NVDA", account, 10000 ether);
@@ -1128,7 +1129,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address blockedAddress = address(new USDCMock("", ""));
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(blockedAddress, 0, bytes32(0));
+        digitalIdentity.mintAdmin(blockedAddress, 0, bytes32(0), ITransferVerifier(address(0)));
         uint256[] memory ids = new uint256[](1);
         ids[0] = digitalIdentity.getId(blockedAddress);
         uint256[] memory valids = new uint256[](1);
@@ -1149,7 +1150,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address verifiedAddress = address(new USDCMock("", ""));
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(verifiedAddress, 0, bytes32(0));
+        digitalIdentity.mintAdmin(verifiedAddress, 0, bytes32(0), ITransferVerifier(address(0)));
         aaplPool.transfer(verifiedAddress, 1);
 
         aaplPool.approve(address(this), 1);
@@ -1173,7 +1174,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address blockedAddress = makeAddr("blocked");
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(blockedAddress, 0, bytes32(0));
+        digitalIdentity.mintAdmin(blockedAddress, 0, bytes32(0), ITransferVerifier(address(0)));
         uint256[] memory ids = new uint256[](1);
         ids[0] = digitalIdentity.getId(blockedAddress);
         uint256[] memory valids = new uint256[](1);
@@ -1194,7 +1195,7 @@ contract DclexPoolTest is Test, TestBalance {
 
         address verifiedAddress = makeAddr("verified");
         vm.prank(ADMIN);
-        digitalIdentity.mintAdmin(verifiedAddress, 0, bytes32(0));
+        digitalIdentity.mintAdmin(verifiedAddress, 0, bytes32(0), ITransferVerifier(address(0)));
         aaplPool.transfer(verifiedAddress, 1);
 
         aaplPool.approve(address(this), 1);
