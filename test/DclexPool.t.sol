@@ -5,14 +5,18 @@ import {Test, console} from "forge-std/Test.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
+import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
 import {DclexPool} from "../src/DclexPool.sol";
-import {Stock} from "dclex-mint/contracts/dclex/Stock.sol";
+import {Stock} from "dclex-blockchain/contracts/dclex/Stock.sol";
 import {USDCMock} from "../test/USDCMock.sol";
-import {Factory} from "dclex-mint/contracts/dclex/Factory.sol";
-import {TokenBuilder} from "dclex-mint/contracts/dclex/TokenBuilder.sol";
-import {DigitalIdentity} from "dclex-mint/contracts/dclex/DigitalIdentity.sol";
-import {SignatureUtils} from "dclex-mint/contracts/dclex/SignatureUtils.sol";
+import {Factory} from "dclex-blockchain/contracts/dclex/Factory.sol";
+import {TokenBuilder} from "dclex-blockchain/contracts/dclex/TokenBuilder.sol";
+import {
+    DigitalIdentity
+} from "dclex-blockchain/contracts/dclex/DigitalIdentity.sol";
+import {
+    SignatureUtils
+} from "dclex-blockchain/contracts/dclex/SignatureUtils.sol";
 import {DeployDclex} from "script/DeployDclex.s.sol";
 import {DclexPythMock} from "./PythMock.sol";
 import {PythAdapter} from "../src/PythAdapter.sol";
@@ -21,16 +25,34 @@ import {DclexRouterMock} from "../test/DclexRouterMock.sol";
 import {DeployDclexPool} from "script/DeployDclexPool.s.sol";
 import {HelperConfig} from "script/HelperConfig.s.sol";
 
-
 contract DclexPoolTest is Test, TestBalance {
     event Paused(address account);
     event Unpaused(address account);
     event FeeCurveUpdated(uint256 baseFeeRate, uint256 sensitivity);
-    event LiquidityAdded(uint256 addedLiquidity, uint256 addedStockAmount, uint256 addedUsdcAmount);
-    event LiquidityRemoved(uint256 removedLiquidity, uint256 removedStockAmount, uint256 removedUsdcAmount);
-    event SwapExecuted(bool usdcInput, uint256 inputAmount, uint256 outputAmount, uint256 stockPrice, uint256 usdcPrice, address recipient);
+    event LiquidityAdded(
+        uint256 addedLiquidity,
+        uint256 addedStockAmount,
+        uint256 addedUsdcAmount
+    );
+    event LiquidityRemoved(
+        uint256 removedLiquidity,
+        uint256 removedStockAmount,
+        uint256 removedUsdcAmount
+    );
+    event SwapExecuted(
+        bool usdcInput,
+        uint256 inputAmount,
+        uint256 outputAmount,
+        uint256 stockPrice,
+        uint256 usdcPrice,
+        address recipient
+    );
     event ProtocolFeeRateChanged(uint256 feeRate);
-    event ProtocolFeeWithdrawn(uint256 stocksWithdrawn, uint256 usdcWithdrawn, address recipient);
+    event ProtocolFeeWithdrawn(
+        uint256 stocksWithdrawn,
+        uint256 usdcWithdrawn,
+        address recipient
+    );
 
     bytes32 internal AAPL_PRICE_FEED_ID;
     bytes32 internal NVDA_PRICE_FEED_ID;
@@ -59,7 +81,10 @@ contract DclexPoolTest is Test, TestBalance {
 
     function setUp() public {
         DeployDclex deployer = new DeployDclex();
-        DeployDclex.DclexContracts memory contracts = deployer.run(ADMIN, MASTER_ADMIN);
+        DeployDclex.DclexContracts memory contracts = deployer.run(
+            ADMIN,
+            MASTER_ADMIN
+        );
         digitalIdentity = contracts.digitalIdentity;
         stocksFactory = contracts.stocksFactory;
 
@@ -67,7 +92,9 @@ contract DclexPoolTest is Test, TestBalance {
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
         POOL_ADMIN = config.admin;
         usdcMock = USDCMock(address(config.usdcToken));
-        pythMock = new DclexPythMock(address(PythAdapter(address(config.oracle)).pyth()));
+        pythMock = new DclexPythMock(
+            address(PythAdapter(address(config.oracle)).pyth())
+        );
         vm.deal(address(pythMock), 1 ether);
         vm.startPrank(ADMIN);
         stocksFactory.createStocks("Apple", "AAPL");
@@ -142,7 +169,10 @@ contract DclexPoolTest is Test, TestBalance {
         pythMock.updatePrice(priceFeedId, price);
     }
 
-    function setPoolStockBalance(DclexPool pool, uint256 desiredAmount) private {
+    function setPoolStockBalance(
+        DclexPool pool,
+        uint256 desiredAmount
+    ) private {
         IERC20 stockToken = pool.stockToken();
         uint256 poolBalance = stockToken.balanceOf(address(pool));
         if (desiredAmount < poolBalance) {
@@ -165,71 +195,129 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcMock.balanceOf(address(pool)), desiredAmount);
     }
 
-    function setPoolStocksProportion(DclexPool pool, bytes32 stockPriceFeedId, uint256 desiredProportion) private {
+    function setPoolStocksProportion(
+        DclexPool pool,
+        bytes32 stockPriceFeedId,
+        uint256 desiredProportion
+    ) private {
         if (desiredProportion == 1 ether) {
             setPoolUSDCBalance(pool, 0);
             return;
         }
         uint256 usdcBalance = usdcMock.balanceOf(address(pool));
         uint256 currentStockPrice = pythMock.getPrice(stockPriceFeedId);
-        uint256 desiredStockBalance = usdcBalance * desiredProportion * 1e30 / (currentStockPrice * (1e18 - desiredProportion));
+        uint256 desiredStockBalance = (usdcBalance * desiredProportion * 1e30) /
+            (currentStockPrice * (1e18 - desiredProportion));
         setPoolStockBalance(pool, desiredStockBalance);
     }
 
-    function assertOutputFeeRate(uint256 expectedFeeRate, uint256 outputReceived, uint256 netOutput) public pure {
-        uint256 feeRate = 1e18 * (netOutput - outputReceived) / netOutput;
+    function assertOutputFeeRate(
+        uint256 expectedFeeRate,
+        uint256 outputReceived,
+        uint256 netOutput
+    ) public pure {
+        uint256 feeRate = (1e18 * (netOutput - outputReceived)) / netOutput;
         assertApproxEqAbsDecimal(feeRate, expectedFeeRate, 0.001 ether, 18);
     }
 
-    function assertInputFeeRate(uint256 expectedFeeRate, uint256 inputPaid, uint256 netInput) public pure {
-        uint256 feeRate = 1e18 * (inputPaid - netInput) / netInput;
+    function assertInputFeeRate(
+        uint256 expectedFeeRate,
+        uint256 inputPaid,
+        uint256 netInput
+    ) public pure {
+        uint256 feeRate = (1e18 * (inputPaid - netInput)) / netInput;
         assertApproxEqAbsDecimal(feeRate, expectedFeeRate, 0.001 ether, 18);
     }
 
-    function assertStockToUSDCExactInputFeeRate(DclexPool pool, uint256 expectedFeeRate) public {
+    function assertStockToUSDCExactInputFeeRate(
+        DclexPool pool,
+        uint256 expectedFeeRate
+    ) public {
         recordBalance(address(usdcMock), address(this));
         pool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);
         int256 balanceChange = getBalanceChange();
         int256 feeRate = (1e6 - balanceChange) * 1e12;
-        assertApproxEqAbsDecimal(feeRate, int256(expectedFeeRate), 0.001 ether, 18);
+        assertApproxEqAbsDecimal(
+            feeRate,
+            int256(expectedFeeRate),
+            0.001 ether,
+            18
+        );
     }
 
-    function assertStockToUSDCExactOutputFeeRate(DclexPool pool, uint256 expectedFeeRate) public {
+    function assertStockToUSDCExactOutputFeeRate(
+        DclexPool pool,
+        uint256 expectedFeeRate
+    ) public {
         recordBalance(address(aaplStock), address(this));
         pool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);
         int256 balanceChange = getBalanceChange();
         int256 feeRate = -balanceChange - 1e18;
-        assertApproxEqAbsDecimal(feeRate, int256(expectedFeeRate), 0.001 ether, 18);
+        assertApproxEqAbsDecimal(
+            feeRate,
+            int256(expectedFeeRate),
+            0.001 ether,
+            18
+        );
     }
 
-    function assertUSDCToStockExactInputFeeRate(DclexPool pool, uint256 expectedFeeRate) public {
+    function assertUSDCToStockExactInputFeeRate(
+        DclexPool pool,
+        uint256 expectedFeeRate
+    ) public {
         recordBalance(address(aaplStock), address(this));
         pool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
         int256 balanceChange = getBalanceChange();
         int256 feeRate = 1e18 - balanceChange;
-        assertApproxEqAbsDecimal(feeRate, int256(expectedFeeRate), 0.001 ether, 18);
+        assertApproxEqAbsDecimal(
+            feeRate,
+            int256(expectedFeeRate),
+            0.001 ether,
+            18
+        );
     }
 
-    function assertUSDCToStockExactOutputFeeRate(DclexPool pool, uint256 expectedFeeRate) public {
+    function assertUSDCToStockExactOutputFeeRate(
+        DclexPool pool,
+        uint256 expectedFeeRate
+    ) public {
         recordBalance(address(usdcMock), address(this));
         pool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
         int256 balanceChange = getBalanceChange();
         int256 feeRate = (-balanceChange - 1e6) * 1e12;
-        assertApproxEqAbsDecimal(feeRate, int256(expectedFeeRate), 0.001 ether, 18);
+        assertApproxEqAbsDecimal(
+            feeRate,
+            int256(expectedFeeRate),
+            0.001 ether,
+            18
+        );
     }
 
-    function dclexSwapCallback(address token, uint256 amount, bytes calldata) external {
+    function dclexSwapCallback(
+        address token,
+        uint256 amount,
+        bytes calldata
+    ) external {
         IERC20(token).transfer(msg.sender, amount);
     }
 
-    function testSwapExactOutputSendsBackRequestedTokensAmount() public liquidityMinted {
+    function testSwapExactOutputSendsBackRequestedTokensAmount()
+        public
+        liquidityMinted
+    {
         uint256 outputBalanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
         uint256 outputBalanceAfter = aaplStock.balanceOf(address(this));
         assertEq(outputBalanceAfter - outputBalanceBefore, 1 ether);
 
         outputBalanceBefore = nvdaStock.balanceOf(address(this));
-        nvdaPool.swapExactOutput(true, 10.000001 ether, address(this), "", PYTH_DATA);
+        nvdaPool.swapExactOutput(
+            true,
+            10.000001 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         outputBalanceAfter = nvdaStock.balanceOf(address(this));
         assertEq(outputBalanceAfter - outputBalanceBefore, 10.000001 ether);
 
@@ -239,16 +327,31 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(outputBalanceAfter - outputBalanceBefore, 300e6);
     }
 
-    function testSwapExactOutputSendsTokensToRecipient() public liquidityMinted {
+    function testSwapExactOutputSendsTokensToRecipient()
+        public
+        liquidityMinted
+    {
         uint256 outputBalanceBefore = aaplStock.balanceOf(address(routerMock1));
         vm.prank(address(routerMock2));
-        aaplPool.swapExactOutput(true, 1 ether, address(routerMock1), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            true,
+            1 ether,
+            address(routerMock1),
+            "",
+            PYTH_DATA
+        );
         uint256 outputBalanceAfter = aaplStock.balanceOf(address(routerMock1));
         assertEq(outputBalanceAfter - outputBalanceBefore, 1 ether);
 
         outputBalanceBefore = aaplStock.balanceOf(address(routerMock2));
         vm.prank(address(routerMock1));
-        aaplPool.swapExactOutput(true, 1 ether, address(routerMock2), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            true,
+            1 ether,
+            address(routerMock2),
+            "",
+            PYTH_DATA
+        );
         outputBalanceAfter = aaplStock.balanceOf(address(routerMock2));
         assertEq(outputBalanceAfter - outputBalanceBefore, 1 ether);
     }
@@ -267,43 +370,97 @@ contract DclexPoolTest is Test, TestBalance {
         assertTrue(routerMock2.dclexSwapCallbackCalled());
     }
 
-    function testSwapExactOutputCallsBackWithInputTokenAmountToBePaid() public liquidityMinted {
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 1e6, "")));
+    function testSwapExactOutputCallsBackWithInputTokenAmountToBePaid()
+        public
+        liquidityMinted
+    {
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 1e6, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactOutput(true, 1 ether, USER_1, "", PYTH_DATA);
 
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 80e6, "")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 80e6, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactOutput(true, 4 ether, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactOutputCallsBackWithInputTokenAddress() public liquidityMinted {
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 1e6, "")));
+    function testSwapExactOutputCallsBackWithInputTokenAddress()
+        public
+        liquidityMinted
+    {
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 1e6, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactOutput(true, 1 ether, USER_1, "", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(aaplStock), 1 ether, "")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(aaplStock), 1 ether, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactOutput(false, 1e6, USER_1, "", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(nvdaStock), 1 ether, "")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(nvdaStock), 1 ether, "")
+            )
+        );
         vm.prank(address(routerMock1));
         nvdaPool.swapExactOutput(false, 1e6, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactOutputCallsBackWithDataPassedByCaller() public liquidityMinted {
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 1e6, hex"1234")));
+    function testSwapExactOutputCallsBackWithDataPassedByCaller()
+        public
+        liquidityMinted
+    {
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 1e6, hex"1234")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactOutput(true, 1 ether, USER_1, hex"1234", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 1e6, hex"ABCD")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 1e6, hex"ABCD")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactOutput(true, 1 ether, USER_1, hex"ABCD", PYTH_DATA);
     }
 
-    function testSwapExactOutputRevertsIfCallerPaysInCallbackLessThanGivenAmount() public liquidityMinted {
+    function testSwapExactOutputRevertsIfCallerPaysInCallbackLessThanGivenAmount()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         routerMock1.setAmountToBePaid(0);
@@ -322,7 +479,10 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.swapExactOutput(true, 1 ether, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactOutputDoesNotRevertIfCallerPaysInCallbackGivenAmountOrMore() public liquidityMinted {
+    function testSwapExactOutputDoesNotRevertIfCallerPaysInCallbackGivenAmountOrMore()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         routerMock1.setAmountToBePaid(20e6);
@@ -338,30 +498,60 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.swapExactOutput(true, 1 ether, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactOutputSendsOutputTokensBeforeCallingCallback() public liquidityMinted {
-        DclexRouterMock.CallbackData memory data = DclexRouterMock.CallbackData(address(aaplStock));
+    function testSwapExactOutputSendsOutputTokensBeforeCallingCallback()
+        public
+        liquidityMinted
+    {
+        DclexRouterMock.CallbackData memory data = DclexRouterMock.CallbackData(
+            address(aaplStock)
+        );
         uint256 outputBalanceBefore = aaplStock.balanceOf(address(this));
         vm.prank(address(routerMock1));
-        aaplPool.swapExactOutput(true, 1 ether, address(routerMock1), abi.encode(data), PYTH_DATA);
-        uint256 balanceChangeOnCallback = routerMock1.recordedBalance() - outputBalanceBefore;
+        aaplPool.swapExactOutput(
+            true,
+            1 ether,
+            address(routerMock1),
+            abi.encode(data),
+            PYTH_DATA
+        );
+        uint256 balanceChangeOnCallback = routerMock1.recordedBalance() -
+            outputBalanceBefore;
         assertEq(balanceChangeOnCallback, 1 ether);
     }
 
-    function testBuySwapExactOutputTakesInputTokenAmountEqualInValueToRequestedOutput() public liquidityMinted {
+    function testBuySwapExactOutputTakesInputTokenAmountEqualInValueToRequestedOutput()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 5.05 ether, address(this), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            true,
+            5.05 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertBalanceDecreased(101e6);
 
         updatePrice(AAPL_PRICE_FEED_ID, 0.001 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 0.01 ether, address(this), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            true,
+            0.01 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertBalanceDecreased(0.00001e6);
     }
 
-    function testSellSwapExactOutputTakesInputTokenAmountEqualInValueToRequestedOutput() public liquidityMinted {
+    function testSellSwapExactOutputTakesInputTokenAmountEqualInValueToRequestedOutput()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 30 ether);
 
@@ -380,39 +570,90 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceDecreased(1000 ether);
     }
 
-    function testBuySwapExactOutputReturnsFinalInputTokenAmount() public liquidityMinted {
+    function testBuySwapExactOutputReturnsFinalInputTokenAmount()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
-        uint256 result = aaplPool.swapExactOutput(true, 5.05 ether, address(this), "", PYTH_DATA);
+        uint256 result = aaplPool.swapExactOutput(
+            true,
+            5.05 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertEq(result, 101e6);
     }
 
-    function testSellSwapExactOutputReturnsFinalInputTokenAmount() public liquidityMinted {
+    function testSellSwapExactOutputReturnsFinalInputTokenAmount()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
-        uint256 result = aaplPool.swapExactOutput(false, 101e6, address(this), "", PYTH_DATA);
+        uint256 result = aaplPool.swapExactOutput(
+            false,
+            101e6,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertEq(result, 5.05 ether);
     }
 
-    function testBuyExactOutputRevertsIfItWouldDrainPoolOutOfStocks() public liquidityMinted {
+    function testBuyExactOutputRevertsIfItWouldDrainPoolOutOfStocks()
+        public
+        liquidityMinted
+    {
         uint256 aaplPoolBalance = aaplStock.balanceOf(address(aaplPool));
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactOutput(true, aaplPoolBalance, address(this), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            true,
+            aaplPoolBalance,
+            address(this),
+            "",
+            PYTH_DATA
+        );
 
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactOutput(true, aaplPoolBalance + 1 ether, address(this), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            true,
+            aaplPoolBalance + 1 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
     }
 
-    function testSellExactOutputRevertsIfItWouldDrainPoolOutOfUsdc() public liquidityMinted {
+    function testSellExactOutputRevertsIfItWouldDrainPoolOutOfUsdc()
+        public
+        liquidityMinted
+    {
         uint256 usdcPoolBalance = usdcMock.balanceOf(address(aaplPool));
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactOutput(false, usdcPoolBalance, address(this), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            false,
+            usdcPoolBalance,
+            address(this),
+            "",
+            PYTH_DATA
+        );
 
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactOutput(false, usdcPoolBalance + 1e6, address(this), "", PYTH_DATA);
+        aaplPool.swapExactOutput(
+            false,
+            usdcPoolBalance + 1e6,
+            address(this),
+            "",
+            PYTH_DATA
+        );
     }
 
-    function testSellExactOutputTakesStockMultiplierIntoAccount() public liquidityMinted {
+    function testSellExactOutputTakesStockMultiplierIntoAccount()
+        public
+        liquidityMinted
+    {
         recordBalance(address(aaplStock), address(this));
         aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);
         assertBalanceDecreased(1 ether);
@@ -422,7 +663,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 0.5 ether);
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 2 AAPL shares
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 2 AAPL shares
         assertBalanceDecreased(1 ether);
 
         vm.prank(ADMIN);
@@ -430,7 +671,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 2 ether);
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 0.5 AAPL shares
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 0.5 AAPL shares
         assertBalanceDecreased(1 ether);
 
         vm.prank(ADMIN);
@@ -438,11 +679,14 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 1.25 ether);
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 0.8 AAPL shares
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 0.8 AAPL shares
         assertBalanceDecreased(1 ether);
     }
 
-    function testBuyExactOutputTakesStockMultiplierIntoAccount() public liquidityMinted {
+    function testBuyExactOutputTakesStockMultiplierIntoAccount()
+        public
+        liquidityMinted
+    {
         recordBalance(address(usdcMock), address(this));
         aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
         assertBalanceDecreased(1e6);
@@ -452,7 +696,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 0.5 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 2 AAPL shares
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 2 AAPL shares
         assertBalanceDecreased(1e6);
 
         vm.prank(ADMIN);
@@ -460,7 +704,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 2 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 0.5 AAPL shares
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 0.5 AAPL shares
         assertBalanceDecreased(1e6);
 
         vm.prank(ADMIN);
@@ -468,12 +712,14 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 1.25 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 0.8 AAPL shares
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 0.8 AAPL shares
         assertBalanceDecreased(1e6);
     }
 
-
-    function testSwapExactOutputRoundsTakenInputTokenAmountUp() public liquidityMinted {
+    function testSwapExactOutputRoundsTakenInputTokenAmountUp()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 3 ether);
         uint256 inputBalanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);
@@ -481,7 +727,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(inputBalanceBefore - inputBalanceAfter, 333333333333333334);
     }
 
-    function testSwapExactInputTakesRequestedTokensAmount() public liquidityMinted {
+    function testSwapExactInputTakesRequestedTokensAmount()
+        public
+        liquidityMinted
+    {
         uint256 inputBalanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);
         uint256 inputBalanceAfter = aaplStock.balanceOf(address(this));
@@ -498,12 +747,21 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(inputBalanceBefore - inputBalanceAfter, 15e6);
 
         inputBalanceBefore = nvdaStock.balanceOf(address(this));
-        nvdaPool.swapExactInput(false, 20.00001 ether, address(this), "", PYTH_DATA);
+        nvdaPool.swapExactInput(
+            false,
+            20.00001 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         inputBalanceAfter = nvdaStock.balanceOf(address(this));
         assertEq(inputBalanceBefore - inputBalanceAfter, 20.00001 ether);
     }
 
-    function testSwapExactInputSendsOutputTokensToRecipient() public liquidityMinted {
+    function testSwapExactInputSendsOutputTokensToRecipient()
+        public
+        liquidityMinted
+    {
         recordBalance(address(usdcMock), USER_1);
         vm.prank(address(routerMock2));
         aaplPool.swapExactInput(false, 1 ether, USER_1, "", PYTH_DATA);
@@ -529,41 +787,95 @@ contract DclexPoolTest is Test, TestBalance {
         assertTrue(routerMock2.dclexSwapCallbackCalled());
     }
 
-    function testSwapExactInputCallsBackWithInputTokenAmountToBePaid() public liquidityMinted {
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(aaplStock), 1 ether, "")));
+    function testSwapExactInputCallsBackWithInputTokenAmountToBePaid()
+        public
+        liquidityMinted
+    {
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(aaplStock), 1 ether, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(false, 1 ether, USER_1, "", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 5e6, "")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 5e6, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(true, 5e6, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactInputCallsBackWithInputTokenAddress() public liquidityMinted {
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(usdcMock), 1e6, "")));
+    function testSwapExactInputCallsBackWithInputTokenAddress()
+        public
+        liquidityMinted
+    {
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(usdcMock), 1e6, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(true, 1e6, USER_1, "", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(aaplStock), 1 ether, "")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(aaplStock), 1 ether, "")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(false, 1 ether, USER_1, "", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(nvdaStock), 1 ether, "")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(nvdaStock), 1 ether, "")
+            )
+        );
         vm.prank(address(routerMock1));
         nvdaPool.swapExactInput(false, 1 ether, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactInputCallsBackWithDataPassedByCaller() public liquidityMinted {
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(aaplStock), 1 ether, hex"1234")));
+    function testSwapExactInputCallsBackWithDataPassedByCaller()
+        public
+        liquidityMinted
+    {
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(aaplStock), 1 ether, hex"1234")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(false, 1 ether, USER_1, hex"1234", PYTH_DATA);
 
-        vm.expectCall(address(routerMock1), abi.encodeCall(routerMock1.dclexSwapCallback, (address(aaplStock), 1 ether, hex"ABCD")));
+        vm.expectCall(
+            address(routerMock1),
+            abi.encodeCall(
+                routerMock1.dclexSwapCallback,
+                (address(aaplStock), 1 ether, hex"ABCD")
+            )
+        );
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(false, 1 ether, USER_1, hex"ABCD", PYTH_DATA);
     }
 
-    function testSwapExactInputRevertsIfCallerPaysInCallbackLessThanGivenAmount() public liquidityMinted {
+    function testSwapExactInputRevertsIfCallerPaysInCallbackLessThanGivenAmount()
+        public
+        liquidityMinted
+    {
         routerMock1.setAmountToBePaid(0);
         vm.prank(address(routerMock1));
         vm.expectRevert(DclexPool.DclexPool__InsufficientInputAmount.selector);
@@ -580,7 +892,10 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.swapExactInput(false, 20 ether, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactInputDoesNotRevertIfCallerPaysInCallbackGivenAmountOrMore() public liquidityMinted {
+    function testSwapExactInputDoesNotRevertIfCallerPaysInCallbackGivenAmountOrMore()
+        public
+        liquidityMinted
+    {
         routerMock1.setAmountToBePaid(20 ether);
         vm.prank(address(routerMock1));
         aaplPool.swapExactInput(false, 20 ether, USER_1, "", PYTH_DATA);
@@ -594,16 +909,31 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.swapExactInput(false, 20 ether, USER_1, "", PYTH_DATA);
     }
 
-    function testSwapExactInputSendsOutputTokensBeforeCallingCallback() public liquidityMinted {
-        DclexRouterMock.CallbackData memory data = DclexRouterMock.CallbackData(address(aaplStock));
+    function testSwapExactInputSendsOutputTokensBeforeCallingCallback()
+        public
+        liquidityMinted
+    {
+        DclexRouterMock.CallbackData memory data = DclexRouterMock.CallbackData(
+            address(aaplStock)
+        );
         uint256 outputBalanceBefore = aaplStock.balanceOf(address(this));
         vm.prank(address(routerMock1));
-        aaplPool.swapExactInput(true, 1e6, address(routerMock1), abi.encode(data), PYTH_DATA);
-        uint256 balanceChangeOnCallback = routerMock1.recordedBalance() - outputBalanceBefore;
+        aaplPool.swapExactInput(
+            true,
+            1e6,
+            address(routerMock1),
+            abi.encode(data),
+            PYTH_DATA
+        );
+        uint256 balanceChangeOnCallback = routerMock1.recordedBalance() -
+            outputBalanceBefore;
         assertEq(balanceChangeOnCallback, 1 ether);
     }
 
-    function testBuySwapExactInputSendsOutputTokenAmountEqualInValueToSentInputTokens() public liquidityMinted {
+    function testBuySwapExactInputSendsOutputTokenAmountEqualInValueToSentInputTokens()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 30 ether);
 
@@ -622,12 +952,21 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreased(1000.1 ether);
     }
 
-    function testSellSwapExactInputSendsOutputTokenAmountEqualInValueToSentInputTokens() public liquidityMinted {
+    function testSellSwapExactInputSendsOutputTokenAmountEqualInValueToSentInputTokens()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         updatePrice(NVDA_PRICE_FEED_ID, 30 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 5.05 ether, address(this), "", PYTH_DATA);
+        aaplPool.swapExactInput(
+            false,
+            5.05 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertBalanceIncreased(101e6);
 
         recordBalance(address(usdcMock), address(this));
@@ -641,19 +980,40 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreased(0.0001e6);
     }
 
-    function testBuySwapExactIntputReturnsFinalInputTokenAmount() public liquidityMinted {
+    function testBuySwapExactIntputReturnsFinalInputTokenAmount()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
-        uint256 result = aaplPool.swapExactInput(true, 101e6, address(this), "", PYTH_DATA);
+        uint256 result = aaplPool.swapExactInput(
+            true,
+            101e6,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertEq(result, 5.05 ether);
     }
 
-    function testSellSwapExactInputReturnsFinalInputTokenAmount() public liquidityMinted {
+    function testSellSwapExactInputReturnsFinalInputTokenAmount()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
-        uint256 result = aaplPool.swapExactInput(false, 5.05 ether, address(this), "", PYTH_DATA);
+        uint256 result = aaplPool.swapExactInput(
+            false,
+            5.05 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
         assertEq(result, 101e6);
     }
 
-    function testSwapExactInputRoundsGivenOutputTokenAmountDown() public liquidityMinted {
+    function testSwapExactInputRoundsGivenOutputTokenAmountDown()
+        public
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 3 ether);
         uint256 outputBalanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
@@ -661,8 +1021,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(outputBalanceAfter - outputBalanceBefore, 333333333333333333);
     }
 
-
-    function testSellExactInputTakesStockMultiplierIntoAccount() public liquidityMinted {
+    function testSellExactInputTakesStockMultiplierIntoAccount()
+        public
+        liquidityMinted
+    {
         recordBalance(address(usdcMock), address(this));
         aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);
         assertBalanceIncreased(1e6);
@@ -672,7 +1034,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 0.5 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 2 AAPL shares
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 2 AAPL shares
         assertBalanceIncreased(1e6);
 
         vm.prank(ADMIN);
@@ -680,7 +1042,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 2 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 0.5 AAPL shares
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 0.5 AAPL shares
         assertBalanceIncreased(1e6);
 
         vm.prank(ADMIN);
@@ -688,11 +1050,14 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 1.25 ether);
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 0.8 AAPL shares
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 0.8 AAPL shares
         assertBalanceIncreased(1e6);
     }
 
-    function testBuyExactInputTakesStockMultiplierIntoAccount() public liquidityMinted {
+    function testBuyExactInputTakesStockMultiplierIntoAccount()
+        public
+        liquidityMinted
+    {
         recordBalance(address(aaplStock), address(this));
         aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
         assertBalanceIncreased(1 ether);
@@ -702,7 +1067,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 0.5 ether);
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 2 AAPL shares
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 2 AAPL shares
         assertBalanceIncreased(1 ether);
 
         vm.prank(ADMIN);
@@ -710,7 +1075,7 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 2 ether);
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 0.5 AAPL shares
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 0.5 AAPL shares
         assertBalanceIncreased(1 ether);
 
         vm.prank(ADMIN);
@@ -718,32 +1083,63 @@ contract DclexPoolTest is Test, TestBalance {
         updatePrice(AAPL_PRICE_FEED_ID, 1.25 ether);
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 0.8 AAPL shares
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 0.8 AAPL shares
         assertBalanceIncreased(1 ether);
     }
 
-
-    function testBuyExactInputRevertsIfItWouldDrainPoolOutOfStocks() public liquidityMinted {
+    function testBuyExactInputRevertsIfItWouldDrainPoolOutOfStocks()
+        public
+        liquidityMinted
+    {
         uint256 aaplPoolBalance = aaplStock.balanceOf(address(aaplPool));
         uint256 usdcInputToTakeAllStocks = aaplPoolBalance / 1e12;
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactInput(true, usdcInputToTakeAllStocks, address(this), "", PYTH_DATA);
+        aaplPool.swapExactInput(
+            true,
+            usdcInputToTakeAllStocks,
+            address(this),
+            "",
+            PYTH_DATA
+        );
 
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactInput(true, usdcInputToTakeAllStocks + 1e6, address(this), "", PYTH_DATA);
+        aaplPool.swapExactInput(
+            true,
+            usdcInputToTakeAllStocks + 1e6,
+            address(this),
+            "",
+            PYTH_DATA
+        );
     }
 
-    function testSellExactInputRevertsIfItWouldDrainPoolOutOfUsdc() public liquidityMinted {
+    function testSellExactInputRevertsIfItWouldDrainPoolOutOfUsdc()
+        public
+        liquidityMinted
+    {
         uint256 usdcPoolBalance = usdcMock.balanceOf(address(aaplPool));
         uint256 aaplInputToTakeAllUsdc = usdcPoolBalance * 1e12;
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactInput(false, aaplInputToTakeAllUsdc, address(this), "", PYTH_DATA);
+        aaplPool.swapExactInput(
+            false,
+            aaplInputToTakeAllUsdc,
+            address(this),
+            "",
+            PYTH_DATA
+        );
 
         vm.expectRevert(DclexPool.DclexPool__NotEnoughPoolLiquidity.selector);
-        aaplPool.swapExactInput(false, aaplInputToTakeAllUsdc + 1 ether, address(this), "", PYTH_DATA);
+        aaplPool.swapExactInput(
+            false,
+            aaplInputToTakeAllUsdc + 1 ether,
+            address(this),
+            "",
+            PYTH_DATA
+        );
     }
 
-    function testInitializeMintsLPTokensAmountEqualToDepositedTokensUsdValue() public {
+    function testInitializeMintsLPTokensAmountEqualToDepositedTokensUsdValue()
+        public
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         recordBalance(address(aaplPool), address(this));
         aaplPool.initialize(1 ether, 1e6, PYTH_DATA);
@@ -788,7 +1184,6 @@ contract DclexPoolTest is Test, TestBalance {
         nvdaPool.initialize(5 ether, 2e6, PYTH_DATA);
         assertBalanceDecreased(5 ether);
     }
-
 
     function testInitializeCannotBeCalledAgain() public {
         aaplPool.initialize(1 ether, 1e6, PYTH_DATA);
@@ -841,34 +1236,41 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(balanceAfter - balanceBefore, 1);
     }
 
-    function testAddLiquidityTakesStockTokensProportionallyToRequestedLiquidityTokensShare() public {
+    function testAddLiquidityTakesStockTokensProportionallyToRequestedLiquidityTokensShare()
+        public
+    {
         aaplPool.initialize(50 ether, 50e6, PYTH_DATA);
 
         assertEq(aaplStock.balanceOf(address(aaplPool)), 50 ether);
         uint256 balanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.addLiquidity(1 ether); // total share requested: 1%
-        uint256 stocksTaken1 = balanceBefore - aaplStock.balanceOf(address(this));
+        uint256 stocksTaken1 = balanceBefore -
+            aaplStock.balanceOf(address(this));
 
         aaplPool.addLiquidity(99 ether);
         setPoolStockBalance(aaplPool, 50 ether);
 
         balanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.addLiquidity(100 ether); // total share requested: 50%
-        uint256 stocksTaken2 = balanceBefore - aaplStock.balanceOf(address(this));
+        uint256 stocksTaken2 = balanceBefore -
+            aaplStock.balanceOf(address(this));
 
         setPoolStockBalance(aaplPool, 50 ether);
 
         assertEq(aaplStock.balanceOf(address(aaplPool)), 50 ether);
         balanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.addLiquidity(240 ether); // total share requested: 80%
-        uint256 stocksTaken3 = balanceBefore - aaplStock.balanceOf(address(this));
+        uint256 stocksTaken3 = balanceBefore -
+            aaplStock.balanceOf(address(this));
 
         assertNotEq(stocksTaken1, 0);
         assertEq(stocksTaken2, 50 * stocksTaken1);
         assertEq(stocksTaken3, 80 * stocksTaken1);
     }
 
-    function testAddLiquidityTakesStocksTokensProportionallyToStocksAmountHeldByPool() public {
+    function testAddLiquidityTakesStocksTokensProportionallyToStocksAmountHeldByPool()
+        public
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         aaplPool.initialize(0.05 ether, 1e6, PYTH_DATA);
 
@@ -902,7 +1304,9 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(balanceBefore - balanceAfter, 1); */
     }
 
-    function testAddLiquidityTakesUSDCTokensProportionallyToRequestedLiquidityTokensShare() public {
+    function testAddLiquidityTakesUSDCTokensProportionallyToRequestedLiquidityTokensShare()
+        public
+    {
         aaplPool.initialize(50 ether, 50e6, PYTH_DATA);
         assertEq(aaplPool.totalSupply(), 100 ether);
 
@@ -928,7 +1332,9 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcTaken3, 80 * usdcTaken1);
     }
 
-    function testAddLiquidityTakesUSDCTokensProportionallyToStocksAmountHeldByPool() public {
+    function testAddLiquidityTakesUSDCTokensProportionallyToStocksAmountHeldByPool()
+        public
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         aaplPool.initialize(0.05 ether, 1e6, PYTH_DATA);
 
@@ -981,7 +1387,9 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(balanceBefore - balanceAfter, 5000);
     }
 
-    function testRemoveLiquidityRevertsWhenCallerHasNotEnoughLiquidityTokens() public {
+    function testRemoveLiquidityRevertsWhenCallerHasNotEnoughLiquidityTokens()
+        public
+    {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
 
         vm.expectPartialRevert(IERC20Errors.ERC20InsufficientBalance.selector);
@@ -1013,12 +1421,15 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(balanceBefore - balanceAfter, 1);
     }
 
-    function testRemoveLiquidityGivesStockTokensProportionallyToBurnedLiquidityTokensShare() public {
+    function testRemoveLiquidityGivesStockTokensProportionallyToBurnedLiquidityTokensShare()
+        public
+    {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
 
         uint256 balanceBefore = aaplStock.balanceOf(address(this));
         aaplPool.removeLiquidity(2 ether); // total share burned: 1%
-        uint256 stocksReceived = aaplStock.balanceOf(address(this)) - balanceBefore;
+        uint256 stocksReceived = aaplStock.balanceOf(address(this)) -
+            balanceBefore;
         assertEq(stocksReceived, 1 ether);
 
         aaplPool.addLiquidity(2 ether);
@@ -1037,7 +1448,9 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(stocksReceived, 80 ether);
     }
 
-    function testRemoveLiquidityGivesStocksTokensProportionallyToStocksAmountHeldByPool() public {
+    function testRemoveLiquidityGivesStocksTokensProportionallyToStocksAmountHeldByPool()
+        public
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         aaplPool.initialize(5 ether, 100e6, PYTH_DATA);
 
@@ -1062,13 +1475,16 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(balanceAfter - balanceBefore, 0.4 ether);
     }
 
-    function testRemoveLiquidityGivesUSDCTokensProportionallyToBurnedLiquidityTokensShare() public {
+    function testRemoveLiquidityGivesUSDCTokensProportionallyToBurnedLiquidityTokensShare()
+        public
+    {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
 
         assertEq(usdcMock.balanceOf(address(aaplPool)), 100e6);
         uint256 balanceBefore = usdcMock.balanceOf(address(this));
         aaplPool.removeLiquidity(4 ether); // total share burned: 2%
-        uint256 usdcReceived = usdcMock.balanceOf(address(this)) - balanceBefore;
+        uint256 usdcReceived = usdcMock.balanceOf(address(this)) -
+            balanceBefore;
         assertEq(usdcReceived, 2e6);
 
         setPoolUSDCBalance(aaplPool, 100e6);
@@ -1087,7 +1503,9 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcReceived, 80e6);
     }
 
-    function testRemoveLiquidityGivesUSDCTokensProportionallyToUSDCAmountHeldByPool() public {
+    function testRemoveLiquidityGivesUSDCTokensProportionallyToUSDCAmountHeldByPool()
+        public
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
         aaplPool.initialize(5 ether, 100e6, PYTH_DATA);
 
@@ -1111,7 +1529,9 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(balanceAfter - balanceBefore, 8e6);
     }
 
-    function testLPTokensCannotBeTransferredToNonDclexVerifiedContracts() public {
+    function testLPTokensCannotBeTransferredToNonDclexVerifiedContracts()
+        public
+    {
         aaplPool.initialize(1000 ether, 1000e6, PYTH_DATA);
         address nonVerifiedContract = address(new USDCMock("", ""));
 
@@ -1156,7 +1576,9 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.transferFrom(address(this), verifiedAddress, 1);
     }
 
-    function testLPTokensCannotBeTransferredToNonDclexVerifiedAccounts() public {
+    function testLPTokensCannotBeTransferredToNonDclexVerifiedAccounts()
+        public
+    {
         aaplPool.initialize(1000 ether, 1000e6, PYTH_DATA);
         address nonVerifiedAddress = makeAddr("non-verified");
 
@@ -1201,7 +1623,10 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.transferFrom(address(this), verifiedAddress, 1);
     }
 
-    function testSwapExactOutputFeesDoNotChangeOutputAmount() public liquidityMinted {
+    function testSwapExactOutputFeesDoNotChangeOutputAmount()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1214,7 +1639,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreasedApprox(1e6);
     }
 
-    function testSwapExactOutputFeeIsProportionalToNetSwapAmount() public liquidityMinted {
+    function testSwapExactOutputFeeIsProportionalToNetSwapAmount()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1251,7 +1679,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceDecreasedApprox(5.15 ether);
     }
 
-    function testSwapExactOutputFeeIsProportionalToFeeRate() public liquidityMinted {
+    function testSwapExactOutputFeeIsProportionalToFeeRate()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1292,7 +1723,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceDecreasedApprox(1 ether);
     }
 
-    function testSwapExactInputFeesDoNotChangeInputAmount() public liquidityMinted {
+    function testSwapExactInputFeesDoNotChangeInputAmount()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1305,7 +1739,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceDecreasedApprox(1e6);
     }
 
-    function testSwapExactInputFeeIsProportionalToGrossSwapAmount() public liquidityMinted {
+    function testSwapExactInputFeeIsProportionalToGrossSwapAmount()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1340,7 +1777,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreasedApprox(4.85 ether);
     }
 
-    function testSwapExactInputFeeIsProportionalToFeeRate() public liquidityMinted {
+    function testSwapExactInputFeeIsProportionalToFeeRate()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1381,7 +1821,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreasedApprox(1 ether);
     }
 
-    function testFeeRateisBaseFeeRateWhenPoolIsBalancedInValue() public liquidityMinted {
+    function testFeeRateisBaseFeeRateWhenPoolIsBalancedInValue()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.001 ether);
 
@@ -1398,7 +1841,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertUSDCToStockExactOutputFeeRate(aaplPool, 0.03 ether);
     }
 
-    function testStockToUSDCSwapExactInputHigherSensitivityCauseQuickerFeeRateRaise() public liquidityMinted {
+    function testStockToUSDCSwapExactInputHigherSensitivityCauseQuickerFeeRateRaise()
+        public
+        liquidityMinted
+    {
         uint256 baseFeeRate = 0.05 ether;
         uint256 poolProportion = 0.75 ether;
 
@@ -1422,8 +1868,11 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.setFeeCurve(baseFeeRate, 0.05 ether);
         assertStockToUSDCExactInputFeeRate(aaplPool, 0.2 ether);
     }
-    
-    function testStockToUSDCSwapExactOutputHigherSensitivityCauseQuickerFeeRateRaise() public liquidityMinted {
+
+    function testStockToUSDCSwapExactOutputHigherSensitivityCauseQuickerFeeRateRaise()
+        public
+        liquidityMinted
+    {
         uint256 baseFeeRate = 0.05 ether;
         uint256 poolProportion = 0.75 ether;
 
@@ -1447,8 +1896,11 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.setFeeCurve(baseFeeRate, 0.05 ether);
         assertStockToUSDCExactOutputFeeRate(aaplPool, 0.2 ether);
     }
-    
-    function testUSDCToStockSwapExactInputHigherSensitivityCauseQuickerFeeRateRaise() public liquidityMinted {
+
+    function testUSDCToStockSwapExactInputHigherSensitivityCauseQuickerFeeRateRaise()
+        public
+        liquidityMinted
+    {
         uint256 baseFeeRate = 0.05 ether;
         uint256 poolProportion = 0.25 ether;
 
@@ -1473,7 +1925,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertUSDCToStockExactInputFeeRate(aaplPool, 0.2 ether);
     }
 
-    function testUSDCToStockSwapExactOutputHigherSensitivityCauseQuickerFeeRateRaise() public liquidityMinted {
+    function testUSDCToStockSwapExactOutputHigherSensitivityCauseQuickerFeeRateRaise()
+        public
+        liquidityMinted
+    {
         uint256 baseFeeRate = 0.05 ether;
         uint256 poolProportion = 0.25 ether;
 
@@ -1497,8 +1952,11 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.setFeeCurve(baseFeeRate, 0.05 ether);
         assertUSDCToStockExactOutputFeeRate(aaplPool, 0.2 ether);
     }
-    
-    function testUSDCToStockFeeRateIsGettingLowerWithIncreasingStockProportionInPool() public liquidityMinted {
+
+    function testUSDCToStockFeeRateIsGettingLowerWithIncreasingStockProportionInPool()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.016 ether, 0.016 ether);
 
@@ -1546,7 +2004,10 @@ contract DclexPoolTest is Test, TestBalance {
         assertUSDCToStockExactOutputFeeRate(aaplPool, 0.004 ether);
     }
 
-    function testStockToUSDCFeeRateIsGettingHigherWithIncreasingStockProportionInPool() public liquidityMinted {
+    function testStockToUSDCFeeRateIsGettingHigherWithIncreasingStockProportionInPool()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.016 ether, 0.016 ether);
 
@@ -1588,111 +2049,256 @@ contract DclexPoolTest is Test, TestBalance {
         //assertStockToUSDCExactOutputFeeRate(aaplPool, 1.6 ether);
     }
 
-    function testStockToUSDCSwapExactInputTheMoreUnbalancedPoolBecomesTheHigherFee() public liquidityMinted {
+    function testStockToUSDCSwapExactInputTheMoreUnbalancedPoolBecomesTheHigherFee()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.01 ether);
 
         uint256 sellProportionOfPoolStocks = 0.5 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        uint256 swapSizeInStocks = sellProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        uint256 swapSizeInStocks = (sellProportionOfPoolStocks *
+            aaplStock.balanceOf(address(aaplPool))) / 1e18;
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, swapSizeInStocks, address(this), "", PYTH_DATA);
-        assertOutputFeeRate(0.04 ether, uint256(getBalanceChange()), swapSizeInStocks / 1e12);
+        aaplPool.swapExactInput(
+            false,
+            swapSizeInStocks,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertOutputFeeRate(
+            0.04 ether,
+            uint256(getBalanceChange()),
+            swapSizeInStocks / 1e12
+        );
 
         sellProportionOfPoolStocks = 0.6 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSizeInStocks = sellProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSizeInStocks =
+            (sellProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, swapSizeInStocks, address(this), "", PYTH_DATA);
-        assertOutputFeeRate(0.045 ether, uint256(getBalanceChange()), swapSizeInStocks / 1e12);
+        aaplPool.swapExactInput(
+            false,
+            swapSizeInStocks,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertOutputFeeRate(
+            0.045 ether,
+            uint256(getBalanceChange()),
+            swapSizeInStocks / 1e12
+        );
 
         sellProportionOfPoolStocks = 0.75 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSizeInStocks = sellProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSizeInStocks =
+            (sellProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(usdcMock), address(this));
-        aaplPool.swapExactInput(false, swapSizeInStocks, address(this), "", PYTH_DATA);
-        assertOutputFeeRate(0.06 ether, uint256(getBalanceChange()), swapSizeInStocks / 1e12);
+        aaplPool.swapExactInput(
+            false,
+            swapSizeInStocks,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertOutputFeeRate(
+            0.06 ether,
+            uint256(getBalanceChange()),
+            swapSizeInStocks / 1e12
+        );
     }
 
-    function testStockToUSDCSwapExactOutputTheMoreUnbalancedPoolBecomesTheHigherFee() public liquidityMinted {
+    function testStockToUSDCSwapExactOutputTheMoreUnbalancedPoolBecomesTheHigherFee()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.01 ether);
 
         uint256 sellProportionOfPoolStocks = 0.5 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        uint256 swapSizeInStocks = sellProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        uint256 swapSizeInStocks = (sellProportionOfPoolStocks *
+            aaplStock.balanceOf(address(aaplPool))) / 1e18;
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, swapSizeInStocks / 1e12, address(this), "", PYTH_DATA);
-        assertInputFeeRate(0.04 ether, uint256(-getBalanceChange()), swapSizeInStocks);
+        aaplPool.swapExactOutput(
+            false,
+            swapSizeInStocks / 1e12,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertInputFeeRate(
+            0.04 ether,
+            uint256(-getBalanceChange()),
+            swapSizeInStocks
+        );
 
         sellProportionOfPoolStocks = 0.6 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSizeInStocks = sellProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSizeInStocks =
+            (sellProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, swapSizeInStocks / 1e12, address(this), "", PYTH_DATA);
-        assertInputFeeRate(0.045 ether, uint256(-getBalanceChange()), swapSizeInStocks);
+        aaplPool.swapExactOutput(
+            false,
+            swapSizeInStocks / 1e12,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertInputFeeRate(
+            0.045 ether,
+            uint256(-getBalanceChange()),
+            swapSizeInStocks
+        );
 
         sellProportionOfPoolStocks = 0.75 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSizeInStocks = sellProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSizeInStocks =
+            (sellProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactOutput(false, swapSizeInStocks / 1e12, address(this), "", PYTH_DATA);
-        assertInputFeeRate(0.06 ether, uint256(-getBalanceChange()), swapSizeInStocks);
+        aaplPool.swapExactOutput(
+            false,
+            swapSizeInStocks / 1e12,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertInputFeeRate(
+            0.06 ether,
+            uint256(-getBalanceChange()),
+            swapSizeInStocks
+        );
     }
 
-    function testUSDCToStockSwapExactInputTheMoreUnbalancedPoolBecomesTheHigherFee() public liquidityMinted {
+    function testUSDCToStockSwapExactInputTheMoreUnbalancedPoolBecomesTheHigherFee()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.01 ether);
 
         uint256 buyProportionOfPoolStocks = 0.5 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        uint256 swapSizeInStocks = buyProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        uint256 swapSizeInStocks = (buyProportionOfPoolStocks *
+            aaplStock.balanceOf(address(aaplPool))) / 1e18;
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, swapSizeInStocks / 1e12, address(this), "", PYTH_DATA);
-        assertOutputFeeRate(0.04 ether, uint256(getBalanceChange()), swapSizeInStocks);
+        aaplPool.swapExactInput(
+            true,
+            swapSizeInStocks / 1e12,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertOutputFeeRate(
+            0.04 ether,
+            uint256(getBalanceChange()),
+            swapSizeInStocks
+        );
 
         buyProportionOfPoolStocks = 0.6 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSizeInStocks = buyProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSizeInStocks =
+            (buyProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, swapSizeInStocks / 1e12, address(this), "", PYTH_DATA);
-        assertOutputFeeRate(0.045 ether, uint256(getBalanceChange()), swapSizeInStocks);
+        aaplPool.swapExactInput(
+            true,
+            swapSizeInStocks / 1e12,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertOutputFeeRate(
+            0.045 ether,
+            uint256(getBalanceChange()),
+            swapSizeInStocks
+        );
 
         buyProportionOfPoolStocks = 0.75 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSizeInStocks = buyProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSizeInStocks =
+            (buyProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(aaplStock), address(this));
-        aaplPool.swapExactInput(true, swapSizeInStocks / 1e12, address(this), "", PYTH_DATA);
-        assertOutputFeeRate(0.06 ether, uint256(getBalanceChange()), swapSizeInStocks);
+        aaplPool.swapExactInput(
+            true,
+            swapSizeInStocks / 1e12,
+            address(this),
+            "",
+            PYTH_DATA
+        );
+        assertOutputFeeRate(
+            0.06 ether,
+            uint256(getBalanceChange()),
+            swapSizeInStocks
+        );
     }
 
-    function testUSDCToStockSwapExactOutputTheMoreUnbalancedPoolBecomesTheHigherFee() public liquidityMinted {
+    function testUSDCToStockSwapExactOutputTheMoreUnbalancedPoolBecomesTheHigherFee()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.03 ether, 0.01 ether);
 
         uint256 buyProportionOfPoolStocks = 0.5 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        uint256 swapSize = buyProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        uint256 swapSize = (buyProportionOfPoolStocks *
+            aaplStock.balanceOf(address(aaplPool))) / 1e18;
         recordBalance(address(usdcMock), address(this));
         aaplPool.swapExactOutput(true, swapSize, address(this), "", PYTH_DATA);
-        assertInputFeeRate(0.04 ether, uint256(-getBalanceChange() * 1e12), swapSize);
+        assertInputFeeRate(
+            0.04 ether,
+            uint256(-getBalanceChange() * 1e12),
+            swapSize
+        );
 
         buyProportionOfPoolStocks = 0.6 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSize = buyProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSize =
+            (buyProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(usdcMock), address(this));
         aaplPool.swapExactOutput(true, swapSize, address(this), "", PYTH_DATA);
-        assertInputFeeRate(0.045 ether, uint256(-getBalanceChange() * 1e12), swapSize);
+        assertInputFeeRate(
+            0.045 ether,
+            uint256(-getBalanceChange() * 1e12),
+            swapSize
+        );
 
         buyProportionOfPoolStocks = 0.75 ether;
         setPoolStocksProportion(aaplPool, AAPL_PRICE_FEED_ID, 0.5 ether);
-        swapSize = buyProportionOfPoolStocks * aaplStock.balanceOf(address(aaplPool)) / 1e18;
+        swapSize =
+            (buyProportionOfPoolStocks *
+                aaplStock.balanceOf(address(aaplPool))) /
+            1e18;
         recordBalance(address(usdcMock), address(this));
         aaplPool.swapExactOutput(true, swapSize, address(this), "", PYTH_DATA);
-        assertInputFeeRate(0.06 ether, uint256(-getBalanceChange() * 1e12), swapSize);
+        assertInputFeeRate(
+            0.06 ether,
+            uint256(-getBalanceChange() * 1e12),
+            swapSize
+        );
     }
 
-    function testSellExactInputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate() public liquidityMinted {
+    function testSellExactInputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1702,20 +2308,23 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0);
 
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 0.01 USDC fee
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 0.01 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0.01 ether);
         assertEq(aaplFees, 0);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setProtocolFeeRate(0.15 ether);
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 0.015 USDC fee
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 0.015 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0.01 ether + 0.015 ether);
         assertEq(aaplFees, 0);
     }
 
-    function testSellExactInputUsdcProtocolFeeIsProportionalToSwapFee() public liquidityMinted {
+    function testSellExactInputUsdcProtocolFeeIsProportionalToSwapFee()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1725,27 +2334,30 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0);
 
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 0.05 USDC fee
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 0.05 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0.005 ether);
         assertEq(aaplFees, 0);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.08 ether, 0);
-        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA);  // 0.08 USDC fee
+        aaplPool.swapExactInput(false, 1 ether, address(this), "", PYTH_DATA); // 0.08 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0.005 ether + 0.008 ether);
         assertEq(aaplFees, 0);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
-        aaplPool.swapExactInput(false, 2 ether, address(this), "", PYTH_DATA);  // 0.1 USDC fee
+        aaplPool.swapExactInput(false, 2 ether, address(this), "", PYTH_DATA); // 0.1 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0.005 ether + 0.008 ether + 0.01 ether);
         assertEq(aaplFees, 0);
     }
 
-    function testBuyExactInputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate() public liquidityMinted {
+    function testBuyExactInputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1755,20 +2367,23 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0);
 
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 0.01 AAPL fee
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 0.01 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0.01 ether);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setProtocolFeeRate(0.15 ether);
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 0.015 AAPL fee
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 0.015 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0.01 ether + 0.015 ether);
     }
 
-    function testBuyExactInputCollectedUsdcProtocolFeeIsProportionalToSwapFee() public liquidityMinted {
+    function testBuyExactInputCollectedUsdcProtocolFeeIsProportionalToSwapFee()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1778,27 +2393,30 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0);
 
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 0.05 AAPL fee
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 0.05 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0.005 ether);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.08 ether, 0);
-        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);  // 0.08 AAPL fee
+        aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA); // 0.08 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0.005 ether + 0.008 ether);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
-        aaplPool.swapExactInput(true, 2e6, address(this), "", PYTH_DATA);  // 0.1 AAPL fee
+        aaplPool.swapExactInput(true, 2e6, address(this), "", PYTH_DATA); // 0.1 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 0);
         assertEq(aaplFees, 0.005 ether + 0.008 ether + 0.01 ether);
     }
 
-    function testSellExactOutputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate() public liquidityMinted {
+    function testSellExactOutputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1808,20 +2426,23 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0);
 
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 0.01 AAPL fee
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 0.01 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0.01 ether);
         assertEq(usdcFees, 0);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setProtocolFeeRate(0.15 ether);
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 0.015 AAPL fee
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 0.015 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0.01 ether + 0.015 ether);
         assertEq(usdcFees, 0);
     }
 
-    function testSellExactOutputCollectedUsdcProtocolFeeIsProportionalToSwapFee() public liquidityMinted {
+    function testSellExactOutputCollectedUsdcProtocolFeeIsProportionalToSwapFee()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1831,28 +2452,30 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0);
 
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 0.05 AAPL fee
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 0.05 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0.005 ether);
         assertEq(usdcFees, 0);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.08 ether, 0);
-        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA);  // 0.08 AAPL fee
+        aaplPool.swapExactOutput(false, 1e6, address(this), "", PYTH_DATA); // 0.08 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0.005 ether + 0.008 ether);
         assertEq(usdcFees, 0);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
-        aaplPool.swapExactOutput(false, 2e6, address(this), "", PYTH_DATA);  // 0.1 AAPL fee
+        aaplPool.swapExactOutput(false, 2e6, address(this), "", PYTH_DATA); // 0.1 AAPL fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0.005 ether + 0.008 ether + 0.01 ether);
         assertEq(usdcFees, 0);
     }
 
-
-    function testBuyExactOutputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate() public liquidityMinted {
+    function testBuyExactOutputUsdcProtocolFeeIsProportionalToSetProtocolFeeRate()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1862,20 +2485,23 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0);
 
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 0.01 USDC fee
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 0.01 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0.01 ether);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setProtocolFeeRate(0.15 ether);
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 0.015 USDC fee
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 0.015 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0.01 ether + 0.015 ether);
     }
 
-    function testBuyExactOutputCollectedUsdcProtocolFeeIsProportionalToSwapFee() public liquidityMinted {
+    function testBuyExactOutputCollectedUsdcProtocolFeeIsProportionalToSwapFee()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -1885,32 +2511,35 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0);
 
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 0.05 USDC fee
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 0.05 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0.005 ether);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.08 ether, 0);
-        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);  // 0.08 USDC fee
+        aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA); // 0.08 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0.005 ether + 0.008 ether);
 
         vm.prank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.05 ether, 0);
-        aaplPool.swapExactOutput(true, 2 ether, address(this), "", PYTH_DATA);  // 0.1 USDC fee
+        aaplPool.swapExactOutput(true, 2 ether, address(this), "", PYTH_DATA); // 0.1 USDC fee
         (aaplFees, usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 0);
         assertEq(usdcFees, 0.005 ether + 0.008 ether + 0.01 ether);
     }
 
-    function testWithdrawCollectedProtocolFeesSendsCollectedStockProtocolFees() public liquidityMinted {
+    function testWithdrawCollectedProtocolFeesSendsCollectedStockProtocolFees()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(false, 300e6, address(this), "", PYTH_DATA);  // 3 AAPL protocol fee
+        aaplPool.swapExactOutput(false, 300e6, address(this), "", PYTH_DATA); // 3 AAPL protocol fee
         (uint256 aaplFees, ) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 3 ether);
 
@@ -1919,20 +2548,23 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.withdrawCollectedProtocolFees(RECEIVER_1);
         assertBalanceIncreased(3 ether);
 
-        aaplPool.swapExactOutput(false, 500e6, address(this), "", PYTH_DATA);  // 5 AAPL protocol fee
-        aaplPool.swapExactOutput(false, 100e6, address(this), "", PYTH_DATA);  // 1 AAPL protocol fee
+        aaplPool.swapExactOutput(false, 500e6, address(this), "", PYTH_DATA); // 5 AAPL protocol fee
+        aaplPool.swapExactOutput(false, 100e6, address(this), "", PYTH_DATA); // 1 AAPL protocol fee
         recordBalance(address(aaplStock), RECEIVER_1);
         vm.prank(POOL_ADMIN);
         aaplPool.withdrawCollectedProtocolFees(RECEIVER_1);
         assertBalanceIncreased(6 ether);
     }
 
-    function testWithdrawCollectedProtocolFeesSendsCollectedUsdcProtocolFees() public liquidityMinted {
+    function testWithdrawCollectedProtocolFeesSendsCollectedUsdcProtocolFees()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(true, 300 ether, address(this), "", PYTH_DATA);  // 3 USDC protocol fee
+        aaplPool.swapExactOutput(true, 300 ether, address(this), "", PYTH_DATA); // 3 USDC protocol fee
         (, uint256 usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(usdcFees, 3 ether);
 
@@ -1941,21 +2573,24 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.withdrawCollectedProtocolFees(RECEIVER_1);
         assertBalanceIncreased(3e6);
 
-        aaplPool.swapExactOutput(true, 500 ether, address(this), "", PYTH_DATA);  // 5 USDC protocol fee
-        aaplPool.swapExactOutput(true, 100 ether, address(this), "", PYTH_DATA);  // 1 USDC protocol fee
+        aaplPool.swapExactOutput(true, 500 ether, address(this), "", PYTH_DATA); // 5 USDC protocol fee
+        aaplPool.swapExactOutput(true, 100 ether, address(this), "", PYTH_DATA); // 1 USDC protocol fee
         recordBalance(address(usdcMock), RECEIVER_1);
         vm.prank(POOL_ADMIN);
         aaplPool.withdrawCollectedProtocolFees(RECEIVER_1);
         assertBalanceIncreased(6e6);
     }
 
-    function testWithdrawCollectedProtocolFeesResetsCollectedProtocolFees() public liquidityMinted {
+    function testWithdrawCollectedProtocolFeesResetsCollectedProtocolFees()
+        public
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(false, 300e6, address(this), "", PYTH_DATA);  // 3 AAPL protocol fee
-        aaplPool.swapExactOutput(true, 500 ether, address(this), "", PYTH_DATA);  // 5 USDC protocol fee
+        aaplPool.swapExactOutput(false, 300e6, address(this), "", PYTH_DATA); // 3 AAPL protocol fee
+        aaplPool.swapExactOutput(true, 500 ether, address(this), "", PYTH_DATA); // 5 USDC protocol fee
         (uint256 aaplFees, uint256 usdcFees) = aaplPool.collectedProtocolFees();
         assertEq(aaplFees, 3 ether);
         assertEq(usdcFees, 5 ether);
@@ -1968,16 +2603,18 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcFees, 0);
     }
 
-    function testAddingLiquidityDoesNotTakeCollectedStocksProtocolFeesIntoAccount() public {
+    function testAddingLiquidityDoesNotTakeCollectedStocksProtocolFeesIntoAccount()
+        public
+    {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(false, 20e6, address(this), "", PYTH_DATA);  // 0.2 AAPL protocol fee
+        aaplPool.swapExactOutput(false, 20e6, address(this), "", PYTH_DATA); // 0.2 AAPL protocol fee
 
         recordBalance(address(aaplStock), address(this));
-        aaplPool.addLiquidity(200 ether);  // pool has 121.8 AAPL of reserves and 0.2 AAPL collected protocol fee 
+        aaplPool.addLiquidity(200 ether); // pool has 121.8 AAPL of reserves and 0.2 AAPL collected protocol fee
         assertBalanceDecreased(121.8 ether);
 
         vm.prank(POOL_ADMIN);
@@ -1987,16 +2624,18 @@ contract DclexPoolTest is Test, TestBalance {
         assertEq(usdcMock.balanceOf(address(aaplPool)), 0);
     }
 
-    function testAddingLiquidityDoesNotTakeCollectedUsdcProtocolFeesIntoAccount() public {
+    function testAddingLiquidityDoesNotTakeCollectedUsdcProtocolFeesIntoAccount()
+        public
+    {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(true, 20 ether, address(this), "", PYTH_DATA);  // 0.2 USDC protocol fee
+        aaplPool.swapExactOutput(true, 20 ether, address(this), "", PYTH_DATA); // 0.2 USDC protocol fee
 
         recordBalance(address(usdcMock), address(this));
-        aaplPool.addLiquidity(200 ether);  // pool has 121.8 USDC of reserves and 0.2 USDC collected protocol fee 
+        aaplPool.addLiquidity(200 ether); // pool has 121.8 USDC of reserves and 0.2 USDC collected protocol fee
         assertBalanceDecreased(121.8e6);
 
         vm.prank(POOL_ADMIN);
@@ -2012,8 +2651,8 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(false, 30e6, address(this), "", PYTH_DATA);  // 0.3 AAPL protocol fee
-        aaplPool.swapExactOutput(true, 50 ether, address(this), "", PYTH_DATA);  // 0.5 USDC protocol fee
+        aaplPool.swapExactOutput(false, 30e6, address(this), "", PYTH_DATA); // 0.3 AAPL protocol fee
+        aaplPool.swapExactOutput(true, 50 ether, address(this), "", PYTH_DATA); // 0.5 USDC protocol fee
 
         aaplPool.removeLiquidity(200 ether);
 
@@ -2023,13 +2662,15 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.withdrawCollectedProtocolFees(RECEIVER_1);
     }
 
-    function testCollectedStockProtocolFeeDoesNotImpactFeeCalculations() public {
+    function testCollectedStockProtocolFeeDoesNotImpactFeeCalculations()
+        public
+    {
         aaplPool.initialize(1000 ether, 1000e6, PYTH_DATA);
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.5 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(false, 600e6, address(this), "", PYTH_DATA);  // 30 AAPL protocol fee
+        aaplPool.swapExactOutput(false, 600e6, address(this), "", PYTH_DATA); // 30 AAPL protocol fee
 
         // we take LP fees out of the pool
         vm.prank(address(aaplPool));
@@ -2049,7 +2690,7 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.setFeeCurve(0.5 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
         vm.stopPrank();
-        aaplPool.swapExactOutput(true, 600 ether, address(this), "", PYTH_DATA);  // 30 USDC protocol fee
+        aaplPool.swapExactOutput(true, 600 ether, address(this), "", PYTH_DATA); // 30 USDC protocol fee
 
         // we take LP fees out of the pool
         vm.prank(address(aaplPool));
@@ -2186,7 +2827,10 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.removeLiquidity(1);
     }
 
-    function testSwapExactInputRevertsWhenPoolIsPaused() public liquidityMinted {
+    function testSwapExactInputRevertsWhenPoolIsPaused()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
@@ -2198,7 +2842,10 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.swapExactInput(true, 1e6, address(this), "", PYTH_DATA);
     }
 
-    function testSwapExactOutputRevertsWhenPoolIsPaused() public liquidityMinted {
+    function testSwapExactOutputRevertsWhenPoolIsPaused()
+        public
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         aaplPool.pause();
 
@@ -2209,7 +2856,7 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.unpause();
         aaplPool.swapExactOutput(true, 1 ether, address(this), "", PYTH_DATA);
     }
-    
+
     function testTransferRevertsWhenPoolIsPaused() public {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
         vm.prank(POOL_ADMIN);
@@ -2222,7 +2869,7 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.unpause();
         aaplPool.transfer(RECEIVER_1, 1);
     }
-    
+
     function testTransferFromRevertsWhenPoolIsPaused() public {
         aaplPool.initialize(100 ether, 100e6, PYTH_DATA);
         aaplPool.approve(address(this), 1);
@@ -2292,7 +2939,10 @@ contract DclexPoolTest is Test, TestBalance {
         nvdaPool.removeLiquidity(20 ether);
     }
 
-    function testSwapExactInputEmitsSwapExecutedEvent() external liquidityMinted {
+    function testSwapExactInputEmitsSwapExecutedEvent()
+        external
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         vm.expectEmit(address(aaplPool));
@@ -2305,7 +2955,10 @@ contract DclexPoolTest is Test, TestBalance {
         nvdaPool.swapExactInput(false, 2 ether, USER_2, "", PYTH_DATA);
     }
 
-    function testSwapExactOutputEmitsSwapExecutedEvent() external liquidityMinted {
+    function testSwapExactOutputEmitsSwapExecutedEvent()
+        external
+        liquidityMinted
+    {
         updatePrice(AAPL_PRICE_FEED_ID, 20 ether);
 
         vm.expectEmit(address(aaplPool));
@@ -2318,7 +2971,10 @@ contract DclexPoolTest is Test, TestBalance {
         nvdaPool.swapExactOutput(false, 300e6, USER_2, "", PYTH_DATA);
     }
 
-    function testSetProtocolFeeRateEmitsProtocolFeeRateChanged() external liquidityMinted {
+    function testSetProtocolFeeRateEmitsProtocolFeeRateChanged()
+        external
+        liquidityMinted
+    {
         vm.prank(POOL_ADMIN);
         vm.expectEmit(address(aaplPool));
         emit ProtocolFeeRateChanged(0.1 ether);
@@ -2330,7 +2986,10 @@ contract DclexPoolTest is Test, TestBalance {
         nvdaPool.setProtocolFeeRate(0.15 ether);
     }
 
-    function testWithdrawCollectedProtocolFeesEmitsProtocolFeeWithdrawn() external liquidityMinted {
+    function testWithdrawCollectedProtocolFeesEmitsProtocolFeeWithdrawn()
+        external
+        liquidityMinted
+    {
         vm.startPrank(POOL_ADMIN);
         aaplPool.setFeeCurve(0.1 ether, 0);
         aaplPool.setProtocolFeeRate(0.1 ether);
@@ -2351,7 +3010,10 @@ contract DclexPoolTest is Test, TestBalance {
         nvdaPool.withdrawCollectedProtocolFees(USER_2);
     }
 
-    function testUpdatePythPriceFeedsUpdatesPriceFeed() external liquidityMinted {
+    function testUpdatePythPriceFeedsUpdatesPriceFeed()
+        external
+        liquidityMinted
+    {
         bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
@@ -2359,11 +3021,27 @@ contract DclexPoolTest is Test, TestBalance {
         aaplPool.updatePriceFeeds{value: expectedFee}(pythData);
 
         vm.expectEmit(address(aaplPool));
-        emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, address(this));
-        aaplPool.swapExactInput{value: 1 ether}(true, 20e6, address(this), "", PYTH_DATA);
+        emit SwapExecuted(
+            true,
+            20e6,
+            1 ether,
+            20 ether,
+            1 ether,
+            address(this)
+        );
+        aaplPool.swapExactInput{value: 1 ether}(
+            true,
+            20e6,
+            address(this),
+            "",
+            PYTH_DATA
+        );
     }
 
-    function testUpdatePythPriceFeedsRefundsLeftoverEther() external liquidityMinted {
+    function testUpdatePythPriceFeedsRefundsLeftoverEther()
+        external
+        liquidityMinted
+    {
         bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
@@ -2399,8 +3077,21 @@ contract DclexPoolTest is Test, TestBalance {
         bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
         vm.expectEmit(address(aaplPool));
-        emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, address(this));
-        aaplPool.swapExactInput{value: 1 ether}(true, 20e6, address(this), "", pythData);
+        emit SwapExecuted(
+            true,
+            20e6,
+            1 ether,
+            20 ether,
+            1 ether,
+            address(this)
+        );
+        aaplPool.swapExactInput{value: 1 ether}(
+            true,
+            20e6,
+            address(this),
+            "",
+            pythData
+        );
     }
 
     function testSwapExactInputRefundsLeftoverEther() external liquidityMinted {
@@ -2408,7 +3099,13 @@ contract DclexPoolTest is Test, TestBalance {
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
         uint256 ethBalanceBefore = address(this).balance;
-        aaplPool.swapExactInput{value: 1 ether}(true, 20e6, address(this), "", pythData);
+        aaplPool.swapExactInput{value: 1 ether}(
+            true,
+            20e6,
+            address(this),
+            "",
+            pythData
+        );
         uint256 ethBalanceAfter = address(this).balance;
         assertEq(ethBalanceBefore - ethBalanceAfter, expectedFee);
     }
@@ -2417,16 +3114,38 @@ contract DclexPoolTest is Test, TestBalance {
         bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
         vm.expectEmit(address(aaplPool));
-        emit SwapExecuted(true, 20e6, 1 ether, 20 ether, 1 ether, address(this));
-        aaplPool.swapExactOutput{value: 1 ether}(true, 1 ether, address(this), "", pythData);
+        emit SwapExecuted(
+            true,
+            20e6,
+            1 ether,
+            20 ether,
+            1 ether,
+            address(this)
+        );
+        aaplPool.swapExactOutput{value: 1 ether}(
+            true,
+            1 ether,
+            address(this),
+            "",
+            pythData
+        );
     }
 
-    function testSwapExactOutputRefundsLeftoverEther() external liquidityMinted {
+    function testSwapExactOutputRefundsLeftoverEther()
+        external
+        liquidityMinted
+    {
         bytes[] memory pythData = new bytes[](1);
         pythData[0] = pythMock.getUpdatePriceData(AAPL_PRICE_FEED_ID, 20 ether);
         uint256 expectedFee = pythMock.getUpdateFee(pythData);
         uint256 ethBalanceBefore = address(this).balance;
-        aaplPool.swapExactOutput{value: 1 ether}(true, 1 ether, address(this), "", pythData);
+        aaplPool.swapExactOutput{value: 1 ether}(
+            true,
+            1 ether,
+            address(this),
+            "",
+            pythData
+        );
         uint256 ethBalanceAfter = address(this).balance;
         assertEq(ethBalanceBefore - ethBalanceAfter, expectedFee);
     }
@@ -2443,4 +3162,3 @@ contract DclexPoolTest is Test, TestBalance {
         vm.stopPrank();
     }
 }
-
