@@ -980,7 +980,7 @@ contract DclexPoolTest is Test, TestBalance {
         assertBalanceIncreased(0.0001e6);
     }
 
-    function testBuySwapExactIntputReturnsFinalInputTokenAmount()
+    function testBuySwapExactInputReturnsFinalInputTokenAmount()
         public
         liquidityMinted
     {
