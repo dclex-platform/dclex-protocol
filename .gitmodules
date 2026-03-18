@@ -10,6 +10,6 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-[submodule "lib/dclex-mint"]
-	path = lib/dclex-mint
-	url = https://github.com/dclex-platform/dclex-mint
+[submodule "lib/dclex-blockchain"]
+	path = lib/dclex-blockchain
+	url = https://github.com/dclex-platform/dclex-blockchain

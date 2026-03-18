@@ -3,15 +3,19 @@ pragma solidity ^0.8.26;
 
 import {IDclexSwapCallback} from "./IDclexSwapCallback.sol";
 import {IPriceOracle} from "./IPriceOracle.sol";
-import {IDID} from "dclex-mint/contracts/interfaces/IDID.sol";
-import {InvalidDID} from "dclex-mint/contracts/libs/Model.sol";
+import {IDID} from "dclex-blockchain/contracts/interfaces/IDID.sol";
+import {InvalidDID} from "dclex-blockchain/contracts/libs/Model.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IStock} from "dclex-mint/contracts/interfaces/IStock.sol";
+import {
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IStock} from "dclex-blockchain/contracts/interfaces/IStock.sol";
 
 contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -101,9 +105,7 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         emit FeeCurveUpdated(baseFeeRate, sensitivity);
     }
 
-    function updatePriceFeeds(
-        bytes[] memory priceUpdateData
-    ) public payable {
+    function updatePriceFeeds(bytes[] memory priceUpdateData) public payable {
         uint256 balanceBefore = address(this).balance - msg.value;
         if (priceUpdateData.length > 0) {
             uint256 fee = oracle.getUpdateFee(priceUpdateData);
@@ -379,9 +381,13 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         }
         uint8 priceDecimals = uint8(uint32(-1 * expo));
         if (targetDecimals >= priceDecimals) {
-            return uint256(uint64(price)) * 10 ** uint32(targetDecimals - priceDecimals);
+            return
+                uint256(uint64(price)) *
+                10 ** uint32(targetDecimals - priceDecimals);
         } else {
-            return uint256(uint64(price)) / 10 ** uint32(priceDecimals - targetDecimals);
+            return
+                uint256(uint64(price)) /
+                10 ** uint32(priceDecimals - targetDecimals);
         }
     }
 
@@ -503,5 +509,4 @@ contract DclexPool is ERC20, AccessControl, Pausable, ReentrancyGuard {
         }
         return super.transferFrom(from, to, amount);
     }
-
 }
